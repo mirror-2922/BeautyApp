@@ -7,7 +7,12 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import java.io.File
 
-enum class AppMode { Camera, AI }
+enum class AppMode { Camera, AI, FACE }
+
+data class FaceResult(
+    val bounds: android.graphics.Rect,
+    val trackingId: Int?
+)
 
 data class ModelInfo(
     val id: String,
@@ -47,6 +52,9 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     var showResolutionDialog by mutableStateOf(false)
     var lensFacing by mutableStateOf(prefs.getInt("lens_facing", androidx.camera.core.CameraSelector.LENS_FACING_BACK))
     var isLoading by mutableStateOf(false)
+
+    // ML Kit Results
+    val detectedFaces = mutableStateListOf<FaceResult>()
 
     // YOLO Config
     var yoloConfidence by mutableStateOf(prefs.getFloat("yolo_conf", 0.5f))
