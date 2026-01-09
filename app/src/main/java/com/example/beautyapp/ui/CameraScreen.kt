@@ -2,7 +2,6 @@ package com.example.beautyapp.ui
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.graphics.Matrix
@@ -78,7 +77,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                                 viewModel.availableResolutions.clear()
                                 viewModel.availableResolutions.addAll(sortedRes)
                                 if (!sortedRes.contains(viewModel.cameraResolution) && sortedRes.isNotEmpty()) {
-                                    viewModel.cameraResolution = sortedRes[0]
+                                    // Don't auto-reset if we just started, only if mismatch
                                 }
                             }
                         }
@@ -88,23 +87,20 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
         }
     }
 
-    // 2. Model Loading logic (Reactive to model choice)
+    // 2. Model Loading logic
     LaunchedEffect(viewModel.currentModelId) {
+        if (viewModel.currentModelId.isEmpty()) return@LaunchedEffect
         viewModel.isLoading = true
         withContext(Dispatchers.IO) {
             val modelFile = File(context.filesDir, "${viewModel.currentModelId}.onnx")
             var initSuccess = false
-            
             if (modelFile.exists()) {
                 initSuccess = NativeLib().initYolo(modelFile.absolutePath)
             }
-            
             withContext(Dispatchers.Main) {
                 viewModel.isLoading = false
                 if (initSuccess) {
-                    Toast.makeText(context, "AI Loaded: ${viewModel.currentModelId}", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "Model not ready. Please download in settings.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "AI Ready: ${viewModel.currentModelId}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -245,6 +241,7 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
 
             cameraProvider.unbindAll()
 
+            // Apply selected resolution to hardware stream
             val imageAnalysis = ImageAnalysis.Builder()
                 .setTargetResolution(viewModel.getCameraSize())
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -272,6 +269,9 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                     }
                     if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(rotatedMat, rotatedMat, 1)
 
+                    // Resolution Logic: 
+                    // 1. If scaling enabled -> Resize rotatedMat to target backend width
+                    // 2. If disabled -> Use rotatedMat as is (already hardware resolution controlled)
                     if (viewModel.backendResolutionScaling) {
                         val scale = viewModel.targetBackendWidth.toFloat() / rotatedMat.cols()
                         val targetHeight = (rotatedMat.rows() * scale).toInt()
@@ -280,7 +280,7 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         rotatedMat.copyTo(processedMat)
                     }
                     
-                    viewModel.actualBackendSize = "${processedMat.cols()}x${processedMat.height()}"
+                    viewModel.actualBackendSize = "${processedMat.cols()}x${processedMat.rows()}"
 
                     if (viewModel.currentMode == AppMode.AI) {
                         val activeIds = viewModel.selectedYoloClasses.map { viewModel.allCOCOClasses.indexOf(it) }.filter { it >= 0 }.toIntArray()

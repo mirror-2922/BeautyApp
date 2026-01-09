@@ -5,9 +5,6 @@ import android.content.Context
 import android.util.Size
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.io.File
 
 enum class AppMode { Camera, AI }
@@ -24,7 +21,7 @@ data class ModelInfo(
 class BeautyViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("beauty_prefs", Context.MODE_PRIVATE)
 
-    // Basic Settings
+    // Appearance
     var isDarkTheme by mutableStateOf(prefs.getBoolean("dark_theme", false))
     var useDynamicColor by mutableStateOf(prefs.getBoolean("dynamic_color", true))
     
@@ -33,12 +30,13 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     var backendResolutionScaling by mutableStateOf(prefs.getBoolean("backend_scaling", false))
     var targetBackendWidth by mutableStateOf(prefs.getInt("backend_width", 640))
     
-    // Performance
+    // Performance Info
     var showDebugInfo by mutableStateOf(true)
     var currentFps by mutableStateOf(0f)
     var inferenceTime by mutableStateOf(0L)
     var hardwareBackend by mutableStateOf(prefs.getString("hardware_backend", "CPU") ?: "CPU")
-    var inferenceEngine by mutableStateOf(prefs.getString("inference_engine", "OpenCV") ?: "OpenCV") // OpenCV, ONNXRuntime
+    var inferenceEngine by mutableStateOf(prefs.getString("inference_engine", "OpenCV") ?: "OpenCV")
+    
     var actualCameraSize by mutableStateOf("0x0")
     var actualBackendSize by mutableStateOf("0x0")
 
@@ -47,7 +45,7 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     var selectedFilter by mutableStateOf("Normal")
     var showFilterDialog by mutableStateOf(false)
     var showResolutionDialog by mutableStateOf(false)
-    var lensFacing by mutableStateOf(androidx.camera.core.CameraSelector.LENS_FACING_BACK)
+    var lensFacing by mutableStateOf(prefs.getInt("lens_facing", androidx.camera.core.CameraSelector.LENS_FACING_BACK))
     var isLoading by mutableStateOf(false)
 
     // YOLO Config
@@ -91,12 +89,10 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
         availableModels.addAll(updatedList)
         downloadedModelCount = updatedList.count { it.isDownloaded }
 
-        // If current model is not downloaded, switch to first available or reset
         val currentFile = File(getApplication<Application>().filesDir, "$currentModelId.onnx")
         if (!currentFile.exists()) {
             val firstDownloaded = updatedList.find { it.isDownloaded }
             currentModelId = firstDownloaded?.id ?: ""
-            saveSettings()
         }
     }
 
@@ -108,9 +104,11 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
             putBoolean("backend_scaling", backendResolutionScaling)
             putInt("backend_width", targetBackendWidth)
             putString("hardware_backend", hardwareBackend)
+            putString("inference_engine", inferenceEngine)
             putFloat("yolo_conf", yoloConfidence)
             putFloat("yolo_iou", yoloIoU)
             putString("current_model_id", currentModelId)
+            putInt("lens_facing", lensFacing)
             apply()
         }
     }

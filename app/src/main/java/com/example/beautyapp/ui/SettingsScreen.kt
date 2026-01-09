@@ -37,18 +37,24 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .verticalScroll(scrollState) // 增加垂直滚动
+                .verticalScroll(scrollState)
                 .padding(16.dp)
         ) {
             // Appearance Section
             Text("Appearance", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("Dark Theme", modifier = Modifier.weight(1f))
-                Switch(checked = viewModel.isDarkTheme, onCheckedChange = { viewModel.isDarkTheme = it })
+                Switch(checked = viewModel.isDarkTheme, onCheckedChange = { 
+                    viewModel.isDarkTheme = it
+                    viewModel.saveSettings()
+                })
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("Dynamic Color (Monet)", modifier = Modifier.weight(1f))
-                Switch(checked = viewModel.useDynamicColor, onCheckedChange = { viewModel.useDynamicColor = it })
+                Switch(checked = viewModel.useDynamicColor, onCheckedChange = { 
+                    viewModel.useDynamicColor = it 
+                    viewModel.saveSettings()
+                })
             }
 
             Divider(modifier = Modifier.padding(vertical = 16.dp))
@@ -73,9 +79,17 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             Text("Sensitivity Control", style = MaterialTheme.typography.bodyMedium)
             Text("Confidence: ${(viewModel.yoloConfidence * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
-            Slider(value = viewModel.yoloConfidence, onValueChange = { viewModel.yoloConfidence = it })
+            Slider(
+                value = viewModel.yoloConfidence, 
+                onValueChange = { viewModel.yoloConfidence = it },
+                onValueChangeFinished = { viewModel.saveSettings() }
+            )
             Text("IoU: ${(viewModel.yoloIoU * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
-            Slider(value = viewModel.yoloIoU, onValueChange = { viewModel.yoloIoU = it })
+            Slider(
+                value = viewModel.yoloIoU, 
+                onValueChange = { viewModel.yoloIoU = it },
+                onValueChangeFinished = { viewModel.saveSettings() }
+            )
 
             Divider(modifier = Modifier.padding(vertical = 16.dp))
 
@@ -93,12 +107,15 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Independent Inference Resolution", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Decouple preview and processing resolution to boost performance while maintaining high-quality preview.",
+                        "Decouple preview and processing resolution to boost performance.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = viewModel.backendResolutionScaling, onCheckedChange = { viewModel.backendResolutionScaling = it })
+                Switch(checked = viewModel.backendResolutionScaling, onCheckedChange = { 
+                    viewModel.backendResolutionScaling = it 
+                    viewModel.saveSettings()
+                })
             }
 
             if (viewModel.backendResolutionScaling) {
@@ -106,6 +123,7 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                 Slider(
                     value = viewModel.targetBackendWidth.toFloat(),
                     onValueChange = { viewModel.targetBackendWidth = it.toInt() },
+                    onValueChangeFinished = { viewModel.saveSettings() },
                     valueRange = 320f..1280f,
                     steps = 3
                 )
@@ -129,6 +147,7 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                         onClick = { 
                             viewModel.inferenceEngine = engine
                             NativeLib().setInferenceEngine(engine)
+                            viewModel.saveSettings()
                         },
                         label = { Text(engine) },
                         modifier = Modifier.padding(end = 8.dp)
@@ -145,6 +164,7 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                         onClick = { 
                             viewModel.hardwareBackend = backend
                             NativeLib().setHardwareBackend(backend)
+                            viewModel.saveSettings()
                         },
                         label = { Text(backend) },
                         modifier = Modifier.padding(end = 8.dp)
@@ -162,7 +182,6 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             onDismissRequest = { viewModel.showResolutionDialog = false },
             title = { Text("Select Capture Resolution") },
             text = {
-                // Fixed: Added verticalScroll to the resolution list
                 Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                     viewModel.availableResolutions.forEach { res ->
                         Row(
@@ -172,6 +191,7 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                                 .clickable {
                                     viewModel.cameraResolution = res
                                     viewModel.showResolutionDialog = false
+                                    viewModel.saveSettings()
                                 }
                                 .padding(12.dp)
                         ) {

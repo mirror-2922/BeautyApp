@@ -127,7 +127,7 @@ vector<YoloResult> OpenCVDetector::detect(Mat& frame, float confThreshold, float
 
         rectangle(frame, box, Scalar(0, 255, 0, 255), 6);
         
-        string labelConf = label + " (YOLO12s) " + to_string(int(conf * 100)) + "%";
+        string labelConf = label + " " + to_string(int(conf * 100)) + "%";
         int baseLine;
         Size labelSize = getTextSize(labelConf, FONT_HERSHEY_SIMPLEX, 1.0, 2, &baseLine);
         int labelY = max(box.y, labelSize.height);
