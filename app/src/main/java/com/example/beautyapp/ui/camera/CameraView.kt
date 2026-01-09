@@ -58,10 +58,12 @@ fun CameraView(viewModel: BeautyViewModel) {
     val aiMat = remember { Mat() }
     var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
+    // Dynamic resolution based on scaling mode
     val targetCaptureSize = remember(viewModel.cameraResolution, viewModel.backendResolutionScaling, viewModel.targetBackendWidth) {
         val prefParts = viewModel.cameraResolution.split("x")
         val prefW = prefParts[0].toInt()
         val prefH = prefParts[1].toInt()
+        
         if (viewModel.backendResolutionScaling) {
             val targetW = maxOf(prefW, viewModel.targetBackendWidth)
             val aspect = prefH.toFloat() / prefW.toFloat()
@@ -73,6 +75,8 @@ fun CameraView(viewModel: BeautyViewModel) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener = Runnable {
             val cameraProvider = cameraProviderFuture.get()
+            
+            // Build advanced selector for physical camera IDs
             val selector = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK && viewModel.selectedCameraId != null) {
                 CameraSelector.Builder().addCameraFilter { cameras -> 
                     cameras.filter { Camera2CameraInfo.from(it).cameraId == viewModel.selectedCameraId } 
@@ -82,7 +86,6 @@ fun CameraView(viewModel: BeautyViewModel) {
             if (!cameraProvider.hasCamera(selector)) return@Runnable
             cameraProvider.unbindAll()
 
-            // Fix: Use modern ResolutionSelector to avoid deprecation warnings
             val resSelector = ResolutionSelector.Builder()
                 .setResolutionStrategy(ResolutionStrategy(targetCaptureSize, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER))
                 .build()
@@ -112,19 +115,25 @@ fun CameraView(viewModel: BeautyViewModel) {
                     }
                     if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(captureMat, captureMat, 1)
                     
+                    // --- RE-SAMPLING LOGIC FIX (No stretching) ---
                     val prefParts = viewModel.cameraResolution.split("x")
                     val prefW = prefParts[0].toInt()
                     val prefH = prefParts[1].toInt()
                     
-                    if (captureMat.cols() != prefW) Imgproc.resize(captureMat, previewMat, org.opencv.core.Size(prefW.toDouble(), prefH.toDouble()))
-                    else captureMat.copyTo(previewMat)
+                    // Always maintain capture ratio during resize
+                    if (captureMat.cols() != prefW || captureMat.rows() != prefH) {
+                        Imgproc.resize(captureMat, previewMat, org.opencv.core.Size(prefW.toDouble(), prefH.toDouble()))
+                    } else {
+                        captureMat.copyTo(previewMat)
+                    }
                     
                     viewModel.actualCameraSize = "${previewMat.cols()}x${previewMat.rows()}"
 
                     if (viewModel.currentMode == AppMode.AI) {
                         if (viewModel.backendResolutionScaling) {
                             val scale = viewModel.targetBackendWidth.toFloat() / captureMat.cols()
-                            Imgproc.resize(captureMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), (captureMat.rows() * scale).toDouble()))
+                            val tH = (captureMat.rows() * scale).toInt()
+                            Imgproc.resize(captureMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), tH.toDouble()))
                         } else previewMat.copyTo(aiMat)
                         
                         viewModel.actualBackendSize = "${aiMat.cols()}x${aiMat.rows()}"
@@ -167,7 +176,7 @@ fun CameraView(viewModel: BeautyViewModel) {
                         viewModel.cpuUsage = 0.1f
                     }
 
-                    if (outputBitmap == null || outputBitmap!!.width != previewMat.cols()) {
+                    if (outputBitmap == null || outputBitmap!!.width != previewMat.cols() || outputBitmap!!.height != previewMat.rows()) {
                         outputBitmap = Bitmap.createBitmap(previewMat.cols(), previewMat.rows(), Bitmap.Config.ARGB_8888)
                     }
                     Utils.matToBitmap(previewMat, outputBitmap)
@@ -189,7 +198,12 @@ fun CameraView(viewModel: BeautyViewModel) {
     DisposableEffect(Unit) { onDispose { executor.shutdown(); rgbaMat.release(); captureMat.release(); previewMat.release(); aiMat.release(); faceDetector.close() } }
 
     if (bitmapState != null) {
-        Image(bitmap = bitmapState!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        Image(
+            bitmap = bitmapState!!.asImageBitmap(), 
+            contentDescription = null, 
+            modifier = Modifier.fillMaxSize(), 
+            contentScale = ContentScale.Fit // Final safety against stretching
+        )
     } else {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }

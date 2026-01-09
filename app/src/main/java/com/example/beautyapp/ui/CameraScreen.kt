@@ -9,7 +9,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -41,42 +40,51 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // 1. Hardware Detection Logic (Simplified call)
-    LaunchedEffect(viewModel.lensFacing, viewModel.selectedCameraId) {
+    // Improved Multi-Camera Detection using CameraManager directly
+    LaunchedEffect(viewModel.lensFacing) {
         withContext(Dispatchers.IO) {
             try {
                 val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                 val discoveredBackCameras = mutableListOf<CameraDeviceInfo>()
+                
+                // Fetch ALL available physical/logical IDs
                 cameraManager.cameraIdList.forEach { id ->
                     val chars = cameraManager.getCameraCharacteristics(id)
                     val facing = chars.get(CameraCharacteristics.LENS_FACING)
+                    
                     if (facing == CameraCharacteristics.LENS_FACING_BACK) {
                         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                        val maxRes = map?.getOutputSizes(ImageFormat.YUV_420_888)?.maxByOrNull { it.width * it.height }?.let { "${it.width}x${it.height}" } ?: "Unknown"
-                        discoveredBackCameras.add(CameraDeviceInfo(id, "Back Camera $id", maxRes))
-                    }
-                    val target = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK) CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
-                    if (facing == target && (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT || viewModel.selectedCameraId == null || viewModel.selectedCameraId == id)) {
-                        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                        val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)
-                        if (sizes != null) {
-                            val sortedRes = sizes.filter { it.width >= 480 }.sortedByDescending { it.width * it.height }.map { "${it.width}x${it.height}" }.distinct()
-                            withContext(Dispatchers.Main) {
-                                viewModel.availableResolutions.clear()
-                                viewModel.availableResolutions.addAll(sortedRes)
-                            }
-                        }
+                        val maxRes = map?.getOutputSizes(ImageFormat.YUV_420_888)
+                            ?.maxByOrNull { it.width * it.height }
+                            ?.let { "${it.width}x${it.height}" } ?: "Unknown"
+                        
+                        // We filter for distinct hardware types or unique IDs
+                        discoveredBackCameras.add(CameraDeviceInfo(id, "Camera Lens $id", maxRes))
                     }
                 }
+                
                 withContext(Dispatchers.Main) {
                     viewModel.backCameras.clear()
                     viewModel.backCameras.addAll(discoveredBackCameras)
+                    
+                    // Basic resolution population for settings
+                    val activeId = viewModel.selectedCameraId ?: "0"
+                    val activeChars = cameraManager.getCameraCharacteristics(activeId)
+                    val map = activeChars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                    val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)
+                    if (sizes != null) {
+                        val sortedRes = sizes.filter { it.width >= 480 }
+                            .sortedByDescending { it.width * it.height }
+                            .map { "${it.width}x${it.height}" }.distinct()
+                        viewModel.availableResolutions.clear()
+                        viewModel.availableResolutions.addAll(sortedRes)
+                    }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
-    // 2. Model Loading Logic
+    // Model Loading
     LaunchedEffect(viewModel.currentModelId) {
         if (viewModel.currentModelId.isEmpty()) return@LaunchedEffect
         viewModel.isLoading = true
@@ -97,7 +105,8 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                 title = { Text("BeautyApp Pro") },
                 actions = {
                     IconButton(onClick = {
-                        viewModel.lensFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                        viewModel.lensFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)
+                            CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                     }) { Icon(Icons.Default.Refresh, "Switch") }
                     IconButton(onClick = { navController.navigate("settings") }) { Icon(Icons.Default.Settings, "Settings") }
                 }
@@ -124,24 +133,13 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     onClick = { viewModel.currentMode = AppMode.FACE }
                 )
             }
-        },
-        floatingActionButton = {
-            if (viewModel.currentMode == AppMode.Camera) {
-                ExtendedFloatingActionButton(
-                    onClick = { viewModel.showFilterDialog = true },
-                    icon = { Icon(Icons.Default.Star, null) },
-                    text = { Text("Filters") }
-                )
-            }
         }
     ) { padding ->
         if (hasPermission) {
             Box(Modifier.padding(padding).fillMaxSize().onGloballyPositioned { containerSize = it.size }) {
-                // Modularized components
                 CameraView(viewModel)
                 CameraOverlay(viewModel, containerSize)
                 AppHud(viewModel, Modifier.align(Alignment.TopStart))
-
                 if (viewModel.isLoading) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
@@ -149,23 +147,5 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                 }
             }
         }
-    }
-
-    if (viewModel.showFilterDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.showFilterDialog = false },
-            title = { Text("Select Filter") },
-            text = {
-                Column {
-                    viewModel.filters.forEach { filter ->
-                        Row(modifier = Modifier.fillMaxWidth().clickable { viewModel.selectedFilter = filter; viewModel.showFilterDialog = false }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = (filter == viewModel.selectedFilter), onClick = null)
-                            Text(filter, modifier = Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-            },
-            confirmButton = {}
-        )
     }
 }
