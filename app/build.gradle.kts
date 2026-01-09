@@ -25,13 +25,29 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            // 包含所有主流架构
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            // 生成一个包含所有架构的通用 APK
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            // Optional: even for debug, we can strip unused native libs
+            // but let's focus on abiFilters first as it is the main gain.
         }
     }
     compileOptions {
