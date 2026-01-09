@@ -1,6 +1,8 @@
 package com.example.beautyapp.util
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -9,21 +11,21 @@ import java.io.FileOutputStream
 object ModelManager {
     private val client = OkHttpClient()
 
-    fun downloadModel(
+    // 改为 suspend 函数，利用协程管理线程切换
+    suspend fun downloadModel(
         context: Context,
         url: String,
         fileName: String,
         onProgress: (Float) -> Unit,
         onComplete: (Boolean) -> Unit
     ) {
-        val request = Request.Builder().url(url).build()
-        
-        Thread {
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(url).build()
             try {
                 val response = client.newCall(request).execute()
                 if (!response.isSuccessful) {
-                    onComplete(false)
-                    return@Thread
+                    withContext(Dispatchers.Main) { onComplete(false) }
+                    return@withContext
                 }
 
                 val body = response.body ?: throw Exception("Empty body")
@@ -40,17 +42,26 @@ object ModelManager {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
                             if (totalBytes > 0) {
-                                onProgress(totalRead.toFloat() / totalBytes)
+                                val progress = totalRead.toFloat() / totalBytes
+                                // 进度更新切回主线程
+                                withContext(Dispatchers.Main) {
+                                    onProgress(progress)
+                                }
                             }
                         }
                     }
                 }
-                onComplete(true)
+                // 成功回调切回主线程
+                withContext(Dispatchers.Main) {
+                    onComplete(true)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                onComplete(false)
+                withContext(Dispatchers.Main) {
+                    onComplete(false)
+                }
             }
-        }.start()
+        }
     }
 
     fun deleteModel(context: Context, fileName: String): Boolean {

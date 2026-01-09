@@ -76,6 +76,7 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     )
     
     var currentModelId by mutableStateOf(prefs.getString("current_model_id", "yolo12n") ?: "yolo12n")
+    var downloadedModelCount by mutableStateOf(0)
     
     init {
         updateDownloadedStatus()
@@ -88,6 +89,15 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
         }
         availableModels.clear()
         availableModels.addAll(updatedList)
+        downloadedModelCount = updatedList.count { it.isDownloaded }
+
+        // If current model is not downloaded, switch to first available or reset
+        val currentFile = File(getApplication<Application>().filesDir, "$currentModelId.onnx")
+        if (!currentFile.exists()) {
+            val firstDownloaded = updatedList.find { it.isDownloaded }
+            currentModelId = firstDownloaded?.id ?: ""
+            saveSettings()
+        }
     }
 
     fun saveSettings() {

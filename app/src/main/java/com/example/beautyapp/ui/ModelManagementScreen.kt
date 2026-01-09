@@ -1,5 +1,7 @@
 package com.example.beautyapp.ui
 
+import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,16 +14,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
 import androidx.navigation.NavController
 import com.example.beautyapp.util.ModelManager
 import com.example.beautyapp.viewmodel.BeautyViewModel
 import com.example.beautyapp.viewmodel.ModelInfo
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope() // 增加协程作用域
     var showCustomUrlDialog by remember { mutableStateOf(false) }
     var customUrl by remember { mutableStateOf("") }
     var customName by remember { mutableStateOf("") }
@@ -52,7 +55,7 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
         ) {
             item {
                 Text(
-                    "Select an active model for AI inference. Models must be downloaded before use.",
+                    "Select an active model for AI inference. At least one model must be kept locally.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -62,6 +65,7 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
                 ModelItem(
                     model = model,
                     isSelected = viewModel.currentModelId == model.id,
+                    canDelete = viewModel.downloadedModelCount > 1,
                     onSelect = { 
                         if (model.isDownloaded) {
                             viewModel.currentModelId = model.id
@@ -70,23 +74,26 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
                     },
                     onDownload = {
                         Toast.makeText(context, "Starting download: ${model.name}", Toast.LENGTH_SHORT).show()
-                        ModelManager.downloadModel(
-                            context, model.url, "${model.id}.onnx",
-                            onProgress = { progress ->
-                                val idx = viewModel.availableModels.indexOfFirst { it.id == model.id }
-                                if (idx != -1) {
-                                    viewModel.availableModels[idx] = viewModel.availableModels[idx].copy(downloadProgress = progress)
+                        // 在协程中启动下载
+                        scope.launch {
+                            ModelManager.downloadModel(
+                                context, model.url, "${model.id}.onnx",
+                                onProgress = { progress ->
+                                    val idx = viewModel.availableModels.indexOfFirst { it.id == model.id }
+                                    if (idx != -1) {
+                                        viewModel.availableModels[idx] = viewModel.availableModels[idx].copy(downloadProgress = progress)
+                                    }
+                                },
+                                onComplete = { success ->
+                                    viewModel.updateDownloadedStatus()
+                                    if (success) {
+                                        Toast.makeText(context, "Download complete: ${model.name}", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Download failed: ${model.name}", Toast.LENGTH_LONG).show()
+                                    }
                                 }
-                            },
-                            onComplete = { success ->
-                                viewModel.updateDownloadedStatus()
-                                if (success) {
-                                    Toast.makeText(context, "Download complete: ${model.name}", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "Download failed: ${model.name}", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        )
+                            )
+                        }
                     },
                     onDelete = {
                         val deleted = ModelManager.deleteModel(context, "${model.id}.onnx")
@@ -144,6 +151,7 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
 fun ModelItem(
     model: ModelInfo,
     isSelected: Boolean,
+    canDelete: Boolean,
     onSelect: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit
@@ -170,8 +178,16 @@ fun ModelItem(
             Spacer(Modifier.height(8.dp))
 
             if (model.isDownloaded) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    if (!canDelete) {
+                        Text("Keep at least one model", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    TextButton(
+                        onClick = onDelete, 
+                        enabled = canDelete,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("Remove")

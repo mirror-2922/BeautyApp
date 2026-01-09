@@ -162,14 +162,18 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             onDismissRequest = { viewModel.showResolutionDialog = false },
             title = { Text("Select Capture Resolution") },
             text = {
-                Column {
+                // Fixed: Added verticalScroll to the resolution list
+                Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
                     viewModel.availableResolutions.forEach { res ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                viewModel.cameraResolution = res
-                                viewModel.showResolutionDialog = false
-                            }.padding(12.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.cameraResolution = res
+                                    viewModel.showResolutionDialog = false
+                                }
+                                .padding(12.dp)
                         ) {
                             RadioButton(selected = (res == viewModel.cameraResolution), onClick = null)
                             Text(res, modifier = Modifier.padding(start = 8.dp))
