@@ -39,7 +39,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.toSize
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import com.example.beautyapp.NativeLib
@@ -110,7 +109,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             withContext(Dispatchers.Main) {
                 viewModel.isLoading = false
                 if (initSuccess) {
-                    Toast.makeText(context, "AI Optimized Ready", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "AI System Ready", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -177,7 +176,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             Box(Modifier.padding(padding).fillMaxSize().onGloballyPositioned { containerSize = it.size }) {
                 CameraProcessor(viewModel)
                 
-                // Fixed Aspect-Aware Overlay
+                // Aspect-Aware UI Overlay
                 DetectionOverlay(viewModel, containerSize)
 
                 if (viewModel.showDebugInfo) {
@@ -188,10 +187,11 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text("FPS: ${"%.1f".format(viewModel.currentFps)}", color = Color.Green, style = MaterialTheme.typography.labelLarge)
-                            Text("Cap: ${viewModel.actualCameraSize}", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Text("Preview: ${viewModel.actualCameraSize}", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             
                             if (viewModel.currentMode == AppMode.AI) {
-                                Text("Inference: ${viewModel.actualBackendSize}", color = Color.Yellow, style = MaterialTheme.typography.labelSmall)
+                                val status = if (viewModel.backendResolutionScaling) "Scaled" else "Full"
+                                Text("Inference ($status): ${viewModel.actualBackendSize}", color = Color.Yellow, style = MaterialTheme.typography.labelSmall)
                                 Text("Latency: ${viewModel.inferenceTime}ms", color = Color.Cyan, style = MaterialTheme.typography.labelSmall)
                             }
                         }
@@ -237,14 +237,13 @@ fun DetectionOverlay(viewModel: BeautyViewModel, containerSize: IntSize) {
     val textMeasurer = rememberTextMeasurer()
     if (containerSize.width <= 0) return
 
-    // 1. Get the source size (what AI processed)
-    val sourceSizeStr = if (viewModel.currentMode == AppMode.AI) viewModel.actualBackendSize else viewModel.actualCameraSize
-    val parts = sourceSizeStr.split("x")
-    if (parts.size < 2) return
-    val srcW = parts[0].toFloat()
-    val srcH = parts[1].toFloat()
+    // 1. Logic: Map detection results to the Preview Display Area
+    // The source of truth for coordinate system is 'actualBackendSize'
+    val backendParts = viewModel.actualBackendSize.split("x")
+    if (backendParts.size < 2) return
+    val srcW = backendParts[0].toFloat()
+    val srcH = backendParts[1].toFloat()
 
-    // 2. Calculate ContentScale.Fit logic manually to find the actual drawing rectangle
     val containerW = containerSize.width.toFloat()
     val containerH = containerSize.height.toFloat()
     
@@ -258,7 +257,6 @@ fun DetectionOverlay(viewModel: BeautyViewModel, containerSize: IntSize) {
     ComposeCanvas(modifier = Modifier.fillMaxSize()) {
         if (viewModel.currentMode == AppMode.AI) {
             viewModel.detectedYoloObjects.forEach { obj ->
-                // Map from backend pixel to displayed pixel
                 val left = offsetX + obj.box[0] * scale
                 val top = offsetY + obj.box[1] * scale
                 val width = obj.box[2] * scale
@@ -289,18 +287,23 @@ fun DetectionOverlay(viewModel: BeautyViewModel, containerSize: IntSize) {
                 )
             }
         } else if (viewModel.currentMode == AppMode.FACE) {
-            viewModel.detectedFaces.forEach { face ->
-                val left = offsetX + face.bounds.left * scale
-                val top = offsetY + face.bounds.top * scale
-                val width = face.bounds.width() * scale
-                val height = face.bounds.height() * scale
+            // ML Kit usually uses Preview Size coordinates (actualCameraSize)
+            val capParts = viewModel.actualCameraSize.split("x")
+            if (capParts.size >= 2) {
+                val cw = capParts[0].toFloat()
+                val ch = capParts[1].toFloat()
+                val fScale = min(containerW / cw, containerH / ch)
+                val fOffX = (containerW - cw * fScale) / 2f
+                val fOffY = (containerH - ch * fScale) / 2f
 
-                drawRect(
-                    color = Color.Yellow,
-                    topLeft = Offset(left, top),
-                    size = androidx.compose.ui.geometry.Size(width, height),
-                    style = Stroke(width = 2.dp.toPx())
-                )
+                viewModel.detectedFaces.forEach { face ->
+                    drawRect(
+                        color = Color.Yellow,
+                        topLeft = Offset(fOffX + face.bounds.left * fScale, fOffY + face.bounds.top * fScale),
+                        size = androidx.compose.ui.geometry.Size(face.bounds.width() * fScale, face.bounds.height() * fScale),
+                        style = Stroke(width = 2.dp.toPx())
+                    )
+                }
             }
         }
     }
@@ -322,9 +325,8 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
     var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
     val rgbaMat = remember { Mat() }
-    val resizedMat = remember { Mat() }
-    val rotatedMat = remember { Mat() }
-    val processedMat = remember { Mat() }
+    val previewMat = remember { Mat() } // High-res for human eye
+    val aiMat = remember { Mat() }      // Low-res for AI logic
     var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     DisposableEffect(lifecycleOwner, viewModel.lensFacing, viewModel.cameraResolution) {
@@ -344,6 +346,7 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                 try {
                     val startTime = System.currentTimeMillis()
                     
+                    // 1. Hardware to RGBA
                     nativeLib.yuvToRgba(
                         imageProxy.planes[0].buffer, imageProxy.planes[0].rowStride,
                         imageProxy.planes[1].buffer, imageProxy.planes[1].rowStride,
@@ -352,43 +355,42 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         imageProxy.width, imageProxy.height, rgbaMat.nativeObjAddr
                     )
 
+                    // 2. Rotate once for High-Res Preview
                     val rotation = imageProxy.imageInfo.rotationDegrees
-                    if (viewModel.backendResolutionScaling && viewModel.currentMode != AppMode.FACE) {
-                        val scale = viewModel.targetBackendWidth.toFloat() / rgbaMat.cols()
-                        val targetHeight = (rgbaMat.rows() * scale).toInt()
-                        Imgproc.resize(rgbaMat, resizedMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), targetHeight.toDouble()))
-                        
-                        when (rotation) {
-                            90 -> Core.rotate(resizedMat, rotatedMat, Core.ROTATE_90_CLOCKWISE)
-                            180 -> Core.rotate(resizedMat, rotatedMat, Core.ROTATE_180)
-                            270 -> Core.rotate(resizedMat, rotatedMat, Core.ROTATE_90_COUNTERCLOCKWISE)
-                            else -> resizedMat.copyTo(rotatedMat)
-                        }
-                    } else {
-                        when (rotation) {
-                            90 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_CLOCKWISE)
-                            180 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_180)
-                            270 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_COUNTERCLOCKWISE)
-                            else -> rgbaMat.copyTo(rotatedMat)
+                    when (rotation) {
+                        90 -> Core.rotate(rgbaMat, previewMat, Core.ROTATE_90_CLOCKWISE)
+                        180 -> Core.rotate(rgbaMat, previewMat, Core.ROTATE_180)
+                        270 -> Core.rotate(rgbaMat, previewMat, Core.ROTATE_90_COUNTERCLOCKWISE)
+                        else -> rgbaMat.copyTo(previewMat)
+                    }
+                    if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(previewMat, previewMat, 1)
+                    
+                    viewModel.actualCameraSize = "${previewMat.cols()}x${previewMat.rows()}"
+
+                    // 3. Process Filters on HIGH-RES PREVIEW
+                    if (viewModel.currentMode == AppMode.Camera && viewModel.selectedFilter != "Normal") {
+                        when (viewModel.selectedFilter) {
+                            "Beauty" -> nativeLib.applyBeautyFilter(previewMat.nativeObjAddr)
+                            "Dehaze" -> nativeLib.applyDehaze(previewMat.nativeObjAddr)
+                            "Underwater" -> nativeLib.applyUnderwater(previewMat.nativeObjAddr)
+                            "Stage" -> nativeLib.applyStage(previewMat.nativeObjAddr)
                         }
                     }
-                    if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(rotatedMat, rotatedMat, 1)
-                    
-                    viewModel.actualCameraSize = "${rotatedMat.cols()}x${rotatedMat.rows()}"
-                    rotatedMat.copyTo(processedMat)
 
-                    if (viewModel.currentMode == AppMode.FACE) {
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val image = InputImage.fromMediaImage(mediaImage, rotation)
-                            faceDetector.process(image).addOnSuccessListener { faces ->
-                                viewModel.detectedFaces.clear()
-                                faces.forEach { viewModel.detectedFaces.add(FaceResult(it.boundingBox, it.trackingId)) }
-                            }
+                    // 4. Branch for AI: Scale previewMat to AI resolution
+                    if (viewModel.currentMode == AppMode.AI) {
+                        if (viewModel.backendResolutionScaling) {
+                            val scale = viewModel.targetBackendWidth.toFloat() / previewMat.cols()
+                            val tH = (previewMat.rows() * scale).toInt()
+                            Imgproc.resize(previewMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), tH.toDouble()))
+                        } else {
+                            previewMat.copyTo(aiMat)
                         }
-                    } else if (viewModel.currentMode == AppMode.AI) {
+                        
+                        viewModel.actualBackendSize = "${aiMat.cols()}x${aiMat.rows()}"
+                        
                         val activeIds = viewModel.selectedYoloClasses.map { viewModel.allCOCOClasses.indexOf(it) }.filter { it >= 0 }.toIntArray()
-                        val jsonResult = nativeLib.yoloInference(processedMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
+                        val jsonResult = nativeLib.yoloInference(aiMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
                         
                         val results = mutableListOf<YoloResultData>()
                         val jsonArray = JSONArray(jsonResult)
@@ -403,21 +405,26 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         }
                         viewModel.detectedYoloObjects.clear()
                         viewModel.detectedYoloObjects.addAll(results)
-                    } else if (viewModel.selectedFilter != "Normal") {
-                        when (viewModel.selectedFilter) {
-                            "Beauty" -> nativeLib.applyBeautyFilter(processedMat.nativeObjAddr)
-                            "Dehaze" -> nativeLib.applyDehaze(processedMat.nativeObjAddr)
-                            "Underwater" -> nativeLib.applyUnderwater(processedMat.nativeObjAddr)
-                            "Stage" -> nativeLib.applyStage(processedMat.nativeObjAddr)
+                    } else if (viewModel.currentMode == AppMode.FACE) {
+                        // ML Kit needs the original InputImage (High res preferred)
+                        val mediaImage = imageProxy.image
+                        if (mediaImage != null) {
+                            val image = InputImage.fromMediaImage(mediaImage, rotation)
+                            faceDetector.process(image).addOnSuccessListener { faces ->
+                                viewModel.detectedFaces.clear()
+                                faces.forEach { viewModel.detectedFaces.add(FaceResult(it.boundingBox, it.trackingId)) }
+                            }
                         }
+                        viewModel.actualBackendSize = viewModel.actualCameraSize
+                    } else {
+                        viewModel.actualBackendSize = viewModel.actualCameraSize
                     }
-                    
-                    viewModel.actualBackendSize = "${processedMat.cols()}x${processedMat.rows()}"
 
-                    if (outputBitmap == null || outputBitmap!!.width != processedMat.cols() || outputBitmap!!.height != processedMat.rows()) {
-                        outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
+                    // 5. Output: ALWAYS use previewMat (High-Res) for the eye
+                    if (outputBitmap == null || outputBitmap!!.width != previewMat.cols() || outputBitmap!!.height != previewMat.rows()) {
+                        outputBitmap = Bitmap.createBitmap(previewMat.cols(), previewMat.rows(), Bitmap.Config.ARGB_8888)
                     }
-                    Utils.matToBitmap(processedMat, outputBitmap)
+                    Utils.matToBitmap(previewMat, outputBitmap)
                     
                     val endTime = System.currentTimeMillis()
                     val duration = endTime - lastFrameTime
@@ -441,9 +448,8 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
         onDispose {
             executor.shutdown()
             rgbaMat.release()
-            resizedMat.release()
-            rotatedMat.release()
-            processedMat.release()
+            previewMat.release()
+            aiMat.release()
             faceDetector.close()
         }
     }
