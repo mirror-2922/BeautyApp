@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope() // 增加协程作用域
+    val scope = rememberCoroutineScope()
     var showCustomUrlDialog by remember { mutableStateOf(false) }
     var customUrl by remember { mutableStateOf("") }
     var customName by remember { mutableStateOf("") }
@@ -35,7 +36,7 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
                 title = { Text("Model Management") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -74,7 +75,6 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
                     },
                     onDownload = {
                         Toast.makeText(context, "Starting download: ${model.name}", Toast.LENGTH_SHORT).show()
-                        // 在协程中启动下载
                         scope.launch {
                             ModelManager.downloadModel(
                                 context, model.url, "${model.id}.onnx",
@@ -146,7 +146,6 @@ fun ModelManagementScreen(navController: NavController, viewModel: BeautyViewMod
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelItem(
     model: ModelInfo,
@@ -157,11 +156,10 @@ fun ModelItem(
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onSelect),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-        ),
-        onClick = onSelect
+        )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -196,7 +194,7 @@ fun ModelItem(
             } else {
                 if (model.downloadProgress > 0f && model.downloadProgress < 1f) {
                     LinearProgressIndicator(
-                        progress = model.downloadProgress,
+                        progress = { model.downloadProgress }, // Fixed: Using lambda overload
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     )
                     Text("Downloading... ${(model.downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)

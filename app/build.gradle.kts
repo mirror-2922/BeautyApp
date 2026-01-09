@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
-// Extract ORT AAR (Still needed as ORT official AAR lacks reliable Prefab config)
+// Unified Robust Extraction Task for JNI (ORT only now)
 val extractOrtAar by tasks.registering(Copy::class) {
     val configuration = configurations.detachedConfiguration(dependencies.create("com.microsoft.onnxruntime:onnxruntime-android:1.18.0"))
     val aarFile = configuration.resolve().first()
@@ -31,20 +31,11 @@ android {
             cmake {
                 cppFlags("-std=c++17")
                 arguments("-DANDROID_STL=c++_shared")
-                // Only ORT remains manual
+                // Pass the extracted path to CMake
                 arguments("-DORT_PATH=${layout.buildDirectory.dir("intermediates/ort-extracted").get().asFile.absolutePath}")
             }
         }
         ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
-    }
-
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-            isUniversalApk = true
-        }
     }
 
     buildTypes {
@@ -58,10 +49,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
-    buildFeatures {
+    
+    // Fixed: Migrated from kotlinOptions to compilerOptions
+    @Suppress("UnstableApiUsage")
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
+
+    buildFeatures { 
         compose = true
-        prefab = true // Crucial for OpenCV Official Prefab
+        prefab = true 
     }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
     externalNativeBuild {
@@ -87,10 +86,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-extended")
     
-    // Official OpenCV via Maven (Prefab)
-    implementation(libs.opencv)
-    
+    implementation("org.opencv:opencv:4.9.0")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+    
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("com.google.mlkit:face-detection:16.1.5")
     implementation(libs.androidx.camera.camera2)

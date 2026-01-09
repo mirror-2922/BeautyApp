@@ -82,13 +82,13 @@ fun CameraView(viewModel: BeautyViewModel) {
             if (!cameraProvider.hasCamera(selector)) return@Runnable
             cameraProvider.unbindAll()
 
-            // Modern Resolution Selector
-            val resolutionSelector = ResolutionSelector.Builder()
+            // Fix: Use modern ResolutionSelector to avoid deprecation warnings
+            val resSelector = ResolutionSelector.Builder()
                 .setResolutionStrategy(ResolutionStrategy(targetCaptureSize, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER))
                 .build()
 
             val imageAnalysis = ImageAnalysis.Builder()
-                .setResolutionSelector(resolutionSelector)
+                .setResolutionSelector(resSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
 
