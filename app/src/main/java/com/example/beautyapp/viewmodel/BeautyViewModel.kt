@@ -51,6 +51,11 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     var actualCameraSize by mutableStateOf("0x0")
     var actualBackendSize by mutableStateOf("0x0")
 
+    // Hardware Usage (Simulated or via System APIs)
+    var cpuUsage by mutableStateOf(0f)
+    var gpuUsage by mutableStateOf(0f)
+    var npuUsage by mutableStateOf(0f)
+
     // State
     var currentMode by mutableStateOf(AppMode.Camera)
     var selectedFilter by mutableStateOf("Normal")

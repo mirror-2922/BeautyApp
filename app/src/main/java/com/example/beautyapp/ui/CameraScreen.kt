@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import com.example.beautyapp.NativeLib
+import com.example.beautyapp.ui.components.AppHud
 import com.example.beautyapp.viewmodel.AppMode
 import com.example.beautyapp.viewmodel.BeautyViewModel
 import com.example.beautyapp.viewmodel.FaceResult
@@ -59,6 +60,7 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.min
+import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,7 +111,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             withContext(Dispatchers.Main) {
                 viewModel.isLoading = false
                 if (initSuccess) {
-                    Toast.makeText(context, "AI System Ready", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "AI Loaded", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -176,27 +178,11 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             Box(Modifier.padding(padding).fillMaxSize().onGloballyPositioned { containerSize = it.size }) {
                 CameraProcessor(viewModel)
                 
-                // Aspect-Aware UI Overlay
+                // Overlay for AI/Face detections
                 DetectionOverlay(viewModel, containerSize)
 
-                if (viewModel.showDebugInfo) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.padding(16.dp).align(Alignment.TopStart)
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text("FPS: ${"%.1f".format(viewModel.currentFps)}", color = Color.Green, style = MaterialTheme.typography.labelLarge)
-                            Text("Preview: ${viewModel.actualCameraSize}", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                            
-                            if (viewModel.currentMode == AppMode.AI) {
-                                val status = if (viewModel.backendResolutionScaling) "Scaled" else "Full"
-                                Text("Inference ($status): ${viewModel.actualBackendSize}", color = Color.Yellow, style = MaterialTheme.typography.labelSmall)
-                                Text("Latency: ${viewModel.inferenceTime}ms", color = Color.Cyan, style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                }
+                // Modular Decoupled HUD
+                AppHud(viewModel, Modifier.align(Alignment.TopStart))
 
                 if (viewModel.isLoading) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
@@ -237,12 +223,11 @@ fun DetectionOverlay(viewModel: BeautyViewModel, containerSize: IntSize) {
     val textMeasurer = rememberTextMeasurer()
     if (containerSize.width <= 0) return
 
-    // 1. Logic: Map detection results to the Preview Display Area
-    // The source of truth for coordinate system is 'actualBackendSize'
-    val backendParts = viewModel.actualBackendSize.split("x")
-    if (backendParts.size < 2) return
-    val srcW = backendParts[0].toFloat()
-    val srcH = backendParts[1].toFloat()
+    val sourceSizeStr = if (viewModel.currentMode == AppMode.AI) viewModel.actualBackendSize else viewModel.actualCameraSize
+    val parts = sourceSizeStr.split("x")
+    if (parts.size < 2) return
+    val srcW = parts[0].toFloat()
+    val srcH = parts[1].toFloat()
 
     val containerW = containerSize.width.toFloat()
     val containerH = containerSize.height.toFloat()
@@ -273,37 +258,22 @@ fun DetectionOverlay(viewModel: BeautyViewModel, containerSize: IntSize) {
                 val textLayout = textMeasurer.measure(labelText, style = TextStyle(color = Color.White, fontSize = 12.sp))
                 val labelSize = androidx.compose.ui.geometry.Size(textLayout.size.width.toFloat(), textLayout.size.height.toFloat())
 
-                drawRect(
-                    color = Color.Green.copy(alpha = 0.7f),
-                    topLeft = Offset(left, top - labelSize.height),
-                    size = labelSize
-                )
-                
-                drawText(
-                    textMeasurer = textMeasurer,
-                    text = labelText,
-                    topLeft = Offset(left, top - labelSize.height),
-                    style = TextStyle(color = Color.White, fontSize = 12.sp)
-                )
+                drawRect(color = Color.Green.copy(alpha = 0.7f), topLeft = Offset(left, top - labelSize.height), size = labelSize)
+                drawText(textMeasurer, labelText, Offset(left, top - labelSize.height), style = TextStyle(color = Color.White, fontSize = 12.sp))
             }
         } else if (viewModel.currentMode == AppMode.FACE) {
-            // ML Kit usually uses Preview Size coordinates (actualCameraSize)
-            val capParts = viewModel.actualCameraSize.split("x")
-            if (capParts.size >= 2) {
-                val cw = capParts[0].toFloat()
-                val ch = capParts[1].toFloat()
-                val fScale = min(containerW / cw, containerH / ch)
-                val fOffX = (containerW - cw * fScale) / 2f
-                val fOffY = (containerH - ch * fScale) / 2f
+            viewModel.detectedFaces.forEach { face ->
+                val left = offsetX + face.bounds.left * scale
+                val top = offsetY + face.bounds.top * scale
+                val width = face.bounds.width() * scale
+                val height = face.bounds.height() * scale
 
-                viewModel.detectedFaces.forEach { face ->
-                    drawRect(
-                        color = Color.Yellow,
-                        topLeft = Offset(fOffX + face.bounds.left * fScale, fOffY + face.bounds.top * fScale),
-                        size = androidx.compose.ui.geometry.Size(face.bounds.width() * fScale, face.bounds.height() * fScale),
-                        style = Stroke(width = 2.dp.toPx())
-                    )
-                }
+                drawRect(
+                    color = Color.Yellow,
+                    topLeft = Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(width, height),
+                    style = Stroke(width = 2.dp.toPx())
+                )
             }
         }
     }
@@ -325,8 +295,8 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
     var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
     val rgbaMat = remember { Mat() }
-    val previewMat = remember { Mat() } // High-res for human eye
-    val aiMat = remember { Mat() }      // Low-res for AI logic
+    val previewMat = remember { Mat() }
+    val aiMat = remember { Mat() }
     var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     DisposableEffect(lifecycleOwner, viewModel.lensFacing, viewModel.cameraResolution) {
@@ -346,7 +316,6 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                 try {
                     val startTime = System.currentTimeMillis()
                     
-                    // 1. Hardware to RGBA
                     nativeLib.yuvToRgba(
                         imageProxy.planes[0].buffer, imageProxy.planes[0].rowStride,
                         imageProxy.planes[1].buffer, imageProxy.planes[1].rowStride,
@@ -355,7 +324,6 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         imageProxy.width, imageProxy.height, rgbaMat.nativeObjAddr
                     )
 
-                    // 2. Rotate once for High-Res Preview
                     val rotation = imageProxy.imageInfo.rotationDegrees
                     when (rotation) {
                         90 -> Core.rotate(rgbaMat, previewMat, Core.ROTATE_90_CLOCKWISE)
@@ -367,28 +335,14 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                     
                     viewModel.actualCameraSize = "${previewMat.cols()}x${previewMat.rows()}"
 
-                    // 3. Process Filters on HIGH-RES PREVIEW
-                    if (viewModel.currentMode == AppMode.Camera && viewModel.selectedFilter != "Normal") {
-                        when (viewModel.selectedFilter) {
-                            "Beauty" -> nativeLib.applyBeautyFilter(previewMat.nativeObjAddr)
-                            "Dehaze" -> nativeLib.applyDehaze(previewMat.nativeObjAddr)
-                            "Underwater" -> nativeLib.applyUnderwater(previewMat.nativeObjAddr)
-                            "Stage" -> nativeLib.applyStage(previewMat.nativeObjAddr)
-                        }
-                    }
-
-                    // 4. Branch for AI: Scale previewMat to AI resolution
                     if (viewModel.currentMode == AppMode.AI) {
                         if (viewModel.backendResolutionScaling) {
                             val scale = viewModel.targetBackendWidth.toFloat() / previewMat.cols()
                             val tH = (previewMat.rows() * scale).toInt()
                             Imgproc.resize(previewMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), tH.toDouble()))
-                        } else {
-                            previewMat.copyTo(aiMat)
-                        }
+                        } else { previewMat.copyTo(aiMat) }
                         
                         viewModel.actualBackendSize = "${aiMat.cols()}x${aiMat.rows()}"
-                        
                         val activeIds = viewModel.selectedYoloClasses.map { viewModel.allCOCOClasses.indexOf(it) }.filter { it >= 0 }.toIntArray()
                         val jsonResult = nativeLib.yoloInference(aiMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
                         
@@ -405,8 +359,13 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         }
                         viewModel.detectedYoloObjects.clear()
                         viewModel.detectedYoloObjects.addAll(results)
+                        
+                        // Simulate usage based on backend
+                        viewModel.cpuUsage = if (viewModel.hardwareBackend == "CPU") Random.nextFloat() * 0.4f + 0.3f else 0.1f
+                        viewModel.gpuUsage = if (viewModel.hardwareBackend.contains("GPU")) Random.nextFloat() * 0.5f + 0.4f else 0.05f
+                        viewModel.npuUsage = if (viewModel.hardwareBackend.contains("NPU")) Random.nextFloat() * 0.6f + 0.3f else 0.01f
+                        
                     } else if (viewModel.currentMode == AppMode.FACE) {
-                        // ML Kit needs the original InputImage (High res preferred)
                         val mediaImage = imageProxy.image
                         if (mediaImage != null) {
                             val image = InputImage.fromMediaImage(mediaImage, rotation)
@@ -416,11 +375,20 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                             }
                         }
                         viewModel.actualBackendSize = viewModel.actualCameraSize
+                        viewModel.cpuUsage = Random.nextFloat() * 0.3f + 0.2f
                     } else {
+                        if (viewModel.selectedFilter != "Normal") {
+                            when (viewModel.selectedFilter) {
+                                "Beauty" -> nativeLib.applyBeautyFilter(previewMat.nativeObjAddr)
+                                "Dehaze" -> nativeLib.applyDehaze(previewMat.nativeObjAddr)
+                                "Underwater" -> nativeLib.applyUnderwater(previewMat.nativeObjAddr)
+                                "Stage" -> nativeLib.applyStage(previewMat.nativeObjAddr)
+                            }
+                        }
                         viewModel.actualBackendSize = viewModel.actualCameraSize
+                        viewModel.cpuUsage = 0.1f
                     }
 
-                    // 5. Output: ALWAYS use previewMat (High-Res) for the eye
                     if (outputBitmap == null || outputBitmap!!.width != previewMat.cols() || outputBitmap!!.height != previewMat.rows()) {
                         outputBitmap = Bitmap.createBitmap(previewMat.cols(), previewMat.rows(), Bitmap.Config.ARGB_8888)
                     }
