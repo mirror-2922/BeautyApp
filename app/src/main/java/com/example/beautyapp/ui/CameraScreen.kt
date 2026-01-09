@@ -48,16 +48,16 @@ import kotlinx.coroutines.withContext
 fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
 
-    // Model Loading logic
+    // Model Loading: YOLO12n
     LaunchedEffect(Unit) {
         if (!viewModel.isLoading) {
             viewModel.isLoading = true
             withContext(Dispatchers.IO) {
                 var initSuccess = false
                 try {
-                    val modelName = "yolo12s.onnx"
+                    val modelName = "yolo12n.onnx"
                     val modelFile = File(context.filesDir, modelName)
-                    if (!modelFile.exists() || modelFile.length() < 1000000) { 
+                    if (!modelFile.exists() || modelFile.length() < 1000000) {
                         context.assets.open(modelName).use { input ->
                             FileOutputStream(modelFile).use { output ->
                                 input.copyTo(output)
@@ -71,9 +71,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                 withContext(Dispatchers.Main) {
                     viewModel.isLoading = false
                     if (initSuccess) {
-                        Toast.makeText(context, "YOLO12s Model Ready", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "YOLO12s Load Failed - Please check assets", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "YOLO12n Ready", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -95,7 +93,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("BeautyApp AI") },
+                title = { Text("BeautyApp AI (YOLO12n)") },
                 actions = {
                     IconButton(onClick = {
                         viewModel.lensFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)
@@ -115,7 +113,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             NavigationBar {
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Face, "AI") },
-                    label = { Text("YOLO12s") },
+                    label = { Text("YOLO12n") },
                     selected = viewModel.currentMode == AppMode.AI,
                     onClick = { viewModel.currentMode = AppMode.AI }
                 )
@@ -150,8 +148,8 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text("FPS: ${"%.1f".format(viewModel.currentFps)}", color = Color.Green, style = MaterialTheme.typography.labelLarge)
-                            Text("Inference: ${viewModel.inferenceTime}ms", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                            Text("Device: ${viewModel.hardwareBackend}", color = Color.Cyan, style = MaterialTheme.typography.labelSmall)
+                            Text("Latency: ${viewModel.inferenceTime}ms", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                            Text("Backend: ${viewModel.hardwareBackend}", color = Color.Cyan, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -202,194 +200,99 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
     val executor = remember { Executors.newSingleThreadExecutor() }
     
     var bitmapState by remember { mutableStateOf<Bitmap?>(null) }
-    
-    // Static reuse
+    var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // Persistent reusable objects
     val rgbaMat = remember { Mat() }
     val rotatedMat = remember { Mat() }
-
-        var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    
-
-        DisposableEffect(lifecycleOwner, viewModel.lensFacing) {
-
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-
-            val listener = Runnable {
-
-                val cameraProvider = cameraProviderFuture.get()
-
-                
-
-                val selector = CameraSelector.Builder().requireLensFacing(viewModel.lensFacing).build()
-
-                
-
-                if (!cameraProvider.hasCamera(selector)) {
-
-                    Toast.makeText(context, "Hardware not found", Toast.LENGTH_SHORT).show()
-
-                    return@Runnable
-
-                }
-
-    
-
-                cameraProvider.unbindAll()
-
-    
-
-                val imageAnalysis = ImageAnalysis.Builder()
-
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-
-                    .build()
-
-    
-
-                imageAnalysis.setAnalyzer(executor) { imageProxy ->
-
-                    try {
-
-                        val startTime = System.currentTimeMillis()
-
-                        val w = imageProxy.width
-
-                        val h = imageProxy.height
-
-                        
-
-                        // 1. YUV to RGBA Mat
-
-                        nativeLib.yuvToRgba(
-
-                            imageProxy.planes[0].buffer, imageProxy.planes[0].rowStride,
-
-                            imageProxy.planes[1].buffer, imageProxy.planes[1].rowStride,
-
-                            imageProxy.planes[2].buffer, imageProxy.planes[2].rowStride,
-
-                            imageProxy.planes[1].pixelStride,
-
-                            w, h, rgbaMat.nativeObjAddr
-
-                        )
-
-    
-
-                        // 2. Rotate Mat to UPRIGHT before processing
-
-                        val rotation = imageProxy.imageInfo.rotationDegrees
-
-                        when (rotation) {
-
-                            90 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_CLOCKWISE)
-
-                            180 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_180)
-
-                            270 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_COUNTERCLOCKWISE)
-
-                            else -> rgbaMat.copyTo(rotatedMat)
-
-                        }
-
-                        
-
-                        if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) {
-
-                            Core.flip(rotatedMat, rotatedMat, 1)
-
-                        }
-
-    
-
-                        // 3. Inference or Filter
-
-                        if (viewModel.currentMode == AppMode.AI) {
-
-                            val activeIds = viewModel.selectedYoloClasses.map { 
-
-                                viewModel.allCOCOClasses.indexOf(it) 
-
-                            }.filter { it >= 0 }.toIntArray()
-
-                            
-
-                            nativeLib.yoloInference(
-
-                                rotatedMat.nativeObjAddr, 
-
-                                viewModel.yoloConfidence, 
-
-                                viewModel.yoloIoU,
-
-                                activeIds
-
-                            )
-
-                        } else if (viewModel.selectedFilter != "Normal") {
-
-                            when (viewModel.selectedFilter) {
-
-                                "Beauty" -> nativeLib.applyBeautyFilter(rotatedMat.nativeObjAddr)
-
-                                "Dehaze" -> nativeLib.applyDehaze(rotatedMat.nativeObjAddr)
-
-                                "Underwater" -> nativeLib.applyUnderwater(rotatedMat.nativeObjAddr)
-
-                                "Stage" -> nativeLib.applyStage(rotatedMat.nativeObjAddr)
-
-                            }
-
-                        }
-
-    
-
-                        // 4. Update UI with upright bitmap
-
-                        val resultBitmap = Bitmap.createBitmap(rotatedMat.cols(), rotatedMat.rows(), Bitmap.Config.ARGB_8888)
-
-                        Utils.matToBitmap(rotatedMat, resultBitmap)
-
-                        
-
-                        // Timing & FPS Calculation
-
-                        val endTime = System.currentTimeMillis()
-
-                        val frameDuration = endTime - lastFrameTime
-
-                        lastFrameTime = endTime
-
-                        
-
-                        viewModel.inferenceTime = endTime - startTime
-
-                        if (frameDuration > 0) {
-
-                            // Smooth FPS
-
-                            viewModel.currentFps = 0.9f * viewModel.currentFps + 0.1f * (1000f / frameDuration)
-
-                        }
-
-    
-
-                        bitmapState = resultBitmap
-
-    
-
-                    } catch (e: Exception) {
-
-                        Log.e("CameraProcessor", "Processing error", e)
-
-                    } finally {
-
-                        imageProxy.close()
-
+    var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    DisposableEffect(lifecycleOwner, viewModel.lensFacing) {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val listener = Runnable {
+            val cameraProvider = cameraProviderFuture.get()
+            val selector = CameraSelector.Builder().requireLensFacing(viewModel.lensFacing).build()
+            
+            if (!cameraProvider.hasCamera(selector)) return@Runnable
+
+            cameraProvider.unbindAll()
+
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+
+            imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                try {
+                    val startTime = System.currentTimeMillis()
+                    val w = imageProxy.width
+                    val h = imageProxy.height
+                    
+                    // 1. YUV to Mat
+                    nativeLib.yuvToRgba(
+                        imageProxy.planes[0].buffer, imageProxy.planes[0].rowStride,
+                        imageProxy.planes[1].buffer, imageProxy.planes[1].rowStride,
+                        imageProxy.planes[2].buffer, imageProxy.planes[2].rowStride,
+                        imageProxy.planes[1].pixelStride,
+                        w, h, rgbaMat.nativeObjAddr
+                    )
+
+                    // 2. Efficient Rotation in OpenCV
+                    val rotation = imageProxy.imageInfo.rotationDegrees
+                    when (rotation) {
+                        90 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_CLOCKWISE)
+                        180 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_180)
+                        270 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_COUNTERCLOCKWISE)
+                        else -> rgbaMat.copyTo(rotatedMat)
+                    }
+                    
+                    if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                        Core.flip(rotatedMat, rotatedMat, 1)
                     }
 
+                    // 3. Process
+                    if (viewModel.currentMode == AppMode.AI) {
+                        val activeIds = viewModel.selectedYoloClasses.map { 
+                            viewModel.allCOCOClasses.indexOf(it) 
+                        }.filter { it >= 0 }.toIntArray()
+                        
+                        nativeLib.yoloInference(rotatedMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
+                    } else if (viewModel.selectedFilter != "Normal") {
+                        when (viewModel.selectedFilter) {
+                            "Beauty" -> nativeLib.applyBeautyFilter(rotatedMat.nativeObjAddr)
+                            "Dehaze" -> nativeLib.applyDehaze(rotatedMat.nativeObjAddr)
+                            "Underwater" -> nativeLib.applyUnderwater(rotatedMat.nativeObjAddr)
+                            "Stage" -> nativeLib.applyStage(rotatedMat.nativeObjAddr)
+                        }
+                    }
+
+                    // 4. Update Reusable Bitmap
+                    if (outputBitmap == null || outputBitmap!!.width != rotatedMat.cols() || outputBitmap!!.height != rotatedMat.rows()) {
+                        outputBitmap = Bitmap.createBitmap(rotatedMat.cols(), rotatedMat.rows(), Bitmap.Config.ARGB_8888)
+                    }
+                    Utils.matToBitmap(rotatedMat, outputBitmap)
+                    
+                    // 5. FPS & Stats
+                    val endTime = System.currentTimeMillis()
+                    val duration = endTime - lastFrameTime
+                    lastFrameTime = endTime
+                    
+                    viewModel.inferenceTime = endTime - startTime
+                    if (duration > 0) {
+                        viewModel.currentFps = 0.9f * viewModel.currentFps + 0.1f * (1000f / duration)
+                    }
+
+                    // Trigger UI update with the same bitmap reference (Compose will detect the change)
+                    // Note: In Compose, assigning the same object doesn't always trigger recomposition unless the state value is different.
+                    // We use a dummy toggle or a wrapper to ensure update.
+                    bitmapState = null // Force refresh
+                    bitmapState = outputBitmap
+
+                } catch (e: Exception) {
+                    Log.e("CameraProcessor", "Processing error", e)
+                } finally {
+                    imageProxy.close()
                 }
+            }
 
             try {
                 cameraProvider.bindToLifecycle(lifecycleOwner, selector, imageAnalysis)
