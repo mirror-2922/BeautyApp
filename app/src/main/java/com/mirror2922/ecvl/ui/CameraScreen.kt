@@ -29,7 +29,6 @@ import com.mirror2922.ecvl.ui.camera.CameraView
 import com.mirror2922.ecvl.ui.components.AppHud
 import com.mirror2922.ecvl.viewmodel.AppMode
 import com.mirror2922.ecvl.viewmodel.BeautyViewModel
-import com.mirror2922.ecvl.viewmodel.CameraDeviceInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -40,44 +39,31 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // Improved Multi-Camera Detection using CameraManager directly
+    // Simplified Hardware Detection (Facing based)
     LaunchedEffect(viewModel.lensFacing) {
         withContext(Dispatchers.IO) {
             try {
                 val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val discoveredBackCameras = mutableListOf<CameraDeviceInfo>()
-                
-                // Fetch ALL available physical/logical IDs
                 cameraManager.cameraIdList.forEach { id ->
                     val chars = cameraManager.getCameraCharacteristics(id)
                     val facing = chars.get(CameraCharacteristics.LENS_FACING)
                     
-                    if (facing == CameraCharacteristics.LENS_FACING_BACK) {
-                        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                        val maxRes = map?.getOutputSizes(ImageFormat.YUV_420_888)
-                            ?.maxByOrNull { it.width * it.height }
-                            ?.let { "${it.width}x${it.height}" } ?: "Unknown"
-                        
-                        // We filter for distinct hardware types or unique IDs
-                        discoveredBackCameras.add(CameraDeviceInfo(id, "Camera Lens $id", maxRes))
-                    }
-                }
-                
-                withContext(Dispatchers.Main) {
-                    viewModel.backCameras.clear()
-                    viewModel.backCameras.addAll(discoveredBackCameras)
+                    val target = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)
+                        CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
                     
-                    // Basic resolution population for settings
-                    val activeId = viewModel.selectedCameraId ?: "0"
-                    val activeChars = cameraManager.getCameraCharacteristics(activeId)
-                    val map = activeChars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                    val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)
-                    if (sizes != null) {
-                        val sortedRes = sizes.filter { it.width >= 480 }
-                            .sortedByDescending { it.width * it.height }
-                            .map { "${it.width}x${it.height}" }.distinct()
-                        viewModel.availableResolutions.clear()
-                        viewModel.availableResolutions.addAll(sortedRes)
+                    if (facing == target) {
+                        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)
+                        if (sizes != null) {
+                            val sortedRes = sizes.filter { it.width >= 480 }
+                                .sortedByDescending { it.width * it.height }
+                                .map { "${it.width}x${it.height}" }.distinct()
+                            
+                            withContext(Dispatchers.Main) {
+                                viewModel.availableResolutions.clear()
+                                viewModel.availableResolutions.addAll(sortedRes)
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) { e.printStackTrace() }
@@ -102,7 +88,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("BeautyApp Pro") },
+                title = { Text("Experimental CV Lab") },
                 actions = {
                     IconButton(onClick = {
                         viewModel.lensFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)

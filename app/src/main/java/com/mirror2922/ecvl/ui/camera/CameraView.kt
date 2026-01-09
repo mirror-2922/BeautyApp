@@ -2,8 +2,6 @@ package com.mirror2922.ecvl.ui.camera
 
 import android.graphics.Bitmap
 import android.util.Size
-import androidx.camera.camera2.interop.Camera2CameraInfo
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -37,7 +35,6 @@ import org.opencv.imgproc.Imgproc
 import java.util.concurrent.Executors
 import kotlin.random.Random
 
-@androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
 @Composable
 fun CameraView(viewModel: BeautyViewModel) {
     val context = LocalContext.current
@@ -58,7 +55,7 @@ fun CameraView(viewModel: BeautyViewModel) {
     val aiMat = remember { Mat() }
     var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    // Dynamic resolution based on scaling mode
+    // Target capture size: Use Max of (Preference, AI Target) to ensure data sufficiency
     val targetCaptureSize = remember(viewModel.cameraResolution, viewModel.backendResolutionScaling, viewModel.targetBackendWidth) {
         val prefParts = viewModel.cameraResolution.split("x")
         val prefW = prefParts[0].toInt()
@@ -71,17 +68,11 @@ fun CameraView(viewModel: BeautyViewModel) {
         } else Size(prefW, prefH)
     }
 
-    DisposableEffect(lifecycleOwner, viewModel.lensFacing, targetCaptureSize, viewModel.selectedCameraId) {
+    DisposableEffect(lifecycleOwner, viewModel.lensFacing, targetCaptureSize) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener = Runnable {
             val cameraProvider = cameraProviderFuture.get()
-            
-            // Build advanced selector for physical camera IDs
-            val selector = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK && viewModel.selectedCameraId != null) {
-                CameraSelector.Builder().addCameraFilter { cameras -> 
-                    cameras.filter { Camera2CameraInfo.from(it).cameraId == viewModel.selectedCameraId } 
-                }.build()
-            } else CameraSelector.Builder().requireLensFacing(viewModel.lensFacing).build()
+            val selector = CameraSelector.Builder().requireLensFacing(viewModel.lensFacing).build()
             
             if (!cameraProvider.hasCamera(selector)) return@Runnable
             cameraProvider.unbindAll()
@@ -115,14 +106,16 @@ fun CameraView(viewModel: BeautyViewModel) {
                     }
                     if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(captureMat, captureMat, 1)
                     
-                    // --- RE-SAMPLING LOGIC FIX (No stretching) ---
+                    // --- PREVIEW BRANCH FIX (Aspect Ratio Preservation) ---
                     val prefParts = viewModel.cameraResolution.split("x")
                     val prefW = prefParts[0].toInt()
-                    val prefH = prefParts[1].toInt()
                     
-                    // Always maintain capture ratio during resize
-                    if (captureMat.cols() != prefW || captureMat.rows() != prefH) {
-                        Imgproc.resize(captureMat, previewMat, org.opencv.core.Size(prefW.toDouble(), prefH.toDouble()))
+                    // Calculate Target Height based on ORIGINAL CAPTURE RATIO to avoid stretching
+                    val captureRatio = captureMat.rows().toDouble() / captureMat.cols().toDouble()
+                    val targetH = (prefW * captureRatio).toInt()
+                    
+                    if (captureMat.cols() != prefW || captureMat.rows() != targetH) {
+                        Imgproc.resize(captureMat, previewMat, org.opencv.core.Size(prefW.toDouble(), targetH.toDouble()))
                     } else {
                         captureMat.copyTo(previewMat)
                     }
@@ -132,9 +125,11 @@ fun CameraView(viewModel: BeautyViewModel) {
                     if (viewModel.currentMode == AppMode.AI) {
                         if (viewModel.backendResolutionScaling) {
                             val scale = viewModel.targetBackendWidth.toFloat() / captureMat.cols()
-                            val tH = (captureMat.rows() * scale).toInt()
-                            Imgproc.resize(captureMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), tH.toDouble()))
-                        } else previewMat.copyTo(aiMat)
+                            val aiH = (captureMat.rows() * scale).toInt()
+                            Imgproc.resize(captureMat, aiMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), aiH.toDouble()))
+                        } else {
+                            previewMat.copyTo(aiMat)
+                        }
                         
                         viewModel.actualBackendSize = "${aiMat.cols()}x${aiMat.rows()}"
                         val activeIds = viewModel.selectedYoloClasses.map { viewModel.allCOCOClasses.indexOf(it) }.filter { it >= 0 }.toIntArray()
@@ -198,12 +193,7 @@ fun CameraView(viewModel: BeautyViewModel) {
     DisposableEffect(Unit) { onDispose { executor.shutdown(); rgbaMat.release(); captureMat.release(); previewMat.release(); aiMat.release(); faceDetector.close() } }
 
     if (bitmapState != null) {
-        Image(
-            bitmap = bitmapState!!.asImageBitmap(), 
-            contentDescription = null, 
-            modifier = Modifier.fillMaxSize(), 
-            contentScale = ContentScale.Fit // Final safety against stretching
-        )
+        Image(bitmap = bitmapState!!.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
     } else {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }

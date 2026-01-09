@@ -22,7 +22,6 @@ import com.mirror2922.ecvl.viewmodel.BeautyViewModel
 @Composable
 fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
     val scrollState = rememberScrollState()
-    var showCameraDialog by remember { mutableStateOf(false) }
     var showBackendWidthDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -57,12 +56,7 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
             SectionTitle("Camera Hardware")
-            SettingItem(
-                title = "Active Rear Camera",
-                subtitle = "Selected: ${viewModel.backCameras.find { it.id == viewModel.selectedCameraId }?.label ?: "System Default"}",
-                icon = Icons.Default.ChevronRight,
-                onClick = { showCameraDialog = true }
-            )
+            
             SettingItem(
                 title = "Capture Resolution",
                 subtitle = "Selected: ${viewModel.cameraResolution} (Actual: ${viewModel.actualCameraSize})",
@@ -110,18 +104,6 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             Text("Experimental CV Lab v1.7.3 | Pure Architecture", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall)
         }
     }
-
-    // Modular Dialogs
-    SelectionDialog(
-        show = showCameraDialog,
-        onDismiss = { showCameraDialog = false },
-        title = "Select Physical Rear Camera",
-        items = listOf(null) + viewModel.backCameras.map { it.id },
-        selectedItem = viewModel.selectedCameraId,
-        onItemSelected = { viewModel.selectedCameraId = it; viewModel.saveSettings() },
-        itemLabel = { id -> viewModel.backCameras.find { it.id == id }?.label ?: "System Default (Logical)" },
-        itemSubtitle = { id -> viewModel.backCameras.find { it.id == id }?.maxResolution }
-    )
 
     SelectionDialog(
         show = viewModel.showResolutionDialog,

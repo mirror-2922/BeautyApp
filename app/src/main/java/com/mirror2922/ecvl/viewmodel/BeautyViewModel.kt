@@ -30,18 +30,8 @@ data class YoloResultData(
     val box: List<Int> // [x, y, w, h]
 )
 
-data class CameraDeviceInfo(
-    val id: String,
-    val label: String,
-    val maxResolution: String
-)
-
 class BeautyViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("ecvl_prefs", Context.MODE_PRIVATE)
-
-    // Camera Settings
-    var selectedCameraId by mutableStateOf(prefs.getString("selected_camera_id", null))
-    val backCameras = mutableStateListOf<CameraDeviceInfo>()
 
     // Appearance
     var isDarkTheme by mutableStateOf(prefs.getBoolean("dark_theme", false))
@@ -112,7 +102,6 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
     )
     val selectedYoloClasses = mutableStateListOf<String>().apply { addAll(allCOCOClasses) }
 
-    // Model Management
     val availableModels = mutableStateListOf(
         ModelInfo("yolov8n", "YOLOv8 Nano", "https://huggingface.co/unity/inference-engine-yolo/resolve/main/models/yolov8n.onnx", "Classic small YOLO model"),
         ModelInfo("yolo11n", "YOLOv11 Nano", "https://huggingface.co/unity/inference-engine-yolo/resolve/main/models/yolo11n.onnx", "Improved performance"),
@@ -156,7 +145,6 @@ class BeautyViewModel(application: Application) : AndroidViewModel(application) 
             putFloat("yfloat_iou", yoloIoU)
             putString("current_model_id", currentModelId)
             putInt("lens_facing", lensFacing)
-            putString("selected_camera_id", selectedCameraId)
             apply()
         }
     }
