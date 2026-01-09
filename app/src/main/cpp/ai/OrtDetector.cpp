@@ -20,14 +20,14 @@ OrtDetector::OrtDetector() : isLoaded(false) {
     };
     
     // ORT initialization
-    auto* ort_env = new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "YoloDetector");
-    env = ort_env;
+    static Ort::Env ort_env(ORT_LOGGING_LEVEL_WARNING, "YoloDetector");
+    env = &ort_env;
 }
 
 OrtDetector::~OrtDetector() {
     if (session) delete (Ort::Session*)session;
     if (session_options) delete (Ort::SessionOptions*)session_options;
-    if (env) delete (Ort::Env*)env;
+    // Env is static, no delete needed
 }
 
 bool OrtDetector::loadModel(const string& modelPath) {
@@ -41,10 +41,14 @@ bool OrtDetector::loadModel(const string& modelPath) {
         auto* ort_session = new Ort::Session(*ort_env, modelPath.c_str(), *options);
         session = ort_session;
 
-        // Get Input/Output Names
+        // Modern ORT API for getting names
         Ort::AllocatorWithDefaultOptions allocator;
-        inputNames.push_back(ort_session->GetInputName(0, allocator));
-        outputNames.push_back(ort_session->GetOutputName(0, allocator));
+        
+        auto input_name = ort_session->GetInputNameAllocated(0, allocator);
+        inputNames.push_back(strdup(input_name.get()));
+        
+        auto output_name = ort_session->GetOutputNameAllocated(0, allocator);
+        outputNames.push_back(strdup(output_name.get()));
 
         isLoaded = true;
         __android_log_print(ANDROID_LOG_DEBUG, "OrtDetector", "Model loaded: %s", modelPath.c_str());
@@ -56,9 +60,7 @@ bool OrtDetector::loadModel(const string& modelPath) {
 }
 
 void OrtDetector::setBackend(const string& backendName) {
-    // Note: To change backend (like NNAPI), we usually need to recreate the session.
-    // For now, we log it. In a full impl, we'd trigger a reload with new options.
-    __android_log_print(ANDROID_LOG_INFO, "OrtDetector", "Backend request: %s", backendName.c_str());
+    __android_log_print(ANDROID_LOG_INFO, "OrtDetector", "Backend requested: %s (Re-load model to apply)", backendName.c_str());
 }
 
 vector<YoloResult> OrtDetector::detect(Mat& frame, float confThreshold, float iouThreshold, const vector<int>& allowedClasses) {
@@ -77,9 +79,9 @@ vector<YoloResult> OrtDetector::detect(Mat& frame, float confThreshold, float io
 
     // HWC to CHW
     vector<float> inputTensorValues(1 * 3 * 640 * 640);
-    for (int c = 0; i < 3; ++c) {
-        for (int h = 0; j < 640; ++h) {
-            for (int w = 0; k < 640; ++w) {
+    for (int c = 0; c < 3; ++c) {
+        for (int h = 0; h < 640; ++h) {
+            for (int w = 0; w < 640; ++w) {
                 inputTensorValues[c * 640 * 640 + h * 640 + w] = resized.at<Vec3f>(h, w)[c];
             }
         }
@@ -92,11 +94,11 @@ vector<YoloResult> OrtDetector::detect(Mat& frame, float confThreshold, float io
 
     auto outputTensors = ort_session->Run(Ort::RunOptions{nullptr}, inputNames.data(), &inputTensor, 1, outputNames.data(), 1);
     float* floatData = outputTensors[0].GetTensorMutableData<float>();
-    auto outputShape = outputTensors[0].GetTensorTypeAndShapeInfo().GetShape(); // [1, 84, 8400]
+    auto outputShape = outputTensors[0].GetTensorTypeAndShapeInfo().GetShape();
 
     // 3. Post-processing
-    int dimensions = (int)outputShape[1]; // 84
-    int rows = (int)outputShape[2];       // 8400
+    int dimensions = (int)outputShape[1]; 
+    int rows = (int)outputShape[2];       
 
     vector<int> class_ids;
     vector<float> confidences;
@@ -109,7 +111,7 @@ vector<YoloResult> OrtDetector::detect(Mat& frame, float confThreshold, float io
         float max_score = 0;
         int class_id = -1;
         for (int j = 4; j < dimensions; ++j) {
-            float score = floatData[j * rows + i]; // Data is typically [84, 8400] transposed
+            float score = floatData[j * rows + i];
             if (score > max_score) {
                 max_score = score;
                 class_id = j - 4;
@@ -136,7 +138,7 @@ vector<YoloResult> OrtDetector::detect(Mat& frame, float confThreshold, float io
     }
 
     vector<int> indices;
-    NMSBoxes(boxes, confidences, confThreshold, iouThreshold, indices);
+    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, iouThreshold, indices);
 
     for (int idx : indices) {
         YoloResult res;

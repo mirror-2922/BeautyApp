@@ -17,12 +17,11 @@ bool initYolo(const char* modelPath) {
 }
 
 void switchEngine(const string& engineName) {
-    // Environment restricts ORT linking currently. 
-    // Fallback to OpenCV while keeping the UI architecture.
-    detector = make_unique<OpenCVDetector>();
-    
-    if (engineName == "ONNXRuntime") {
-        __android_log_print(ANDROID_LOG_WARN, "InferenceEngine", "ONNXRuntime selected (Currently fallback to OpenCV)");
+    if (engineName == "OpenCV") {
+        detector = make_unique<OpenCVDetector>();
+    } else if (engineName == "ONNXRuntime") {
+        detector = make_unique<OrtDetector>();
+        __android_log_print(ANDROID_LOG_INFO, "InferenceEngine", "ONNXRuntime engine successfully initialized");
     }
     
     if (!lastModelPath.empty()) {

@@ -4,6 +4,14 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// Official way to extract AAR content if prefab is missing/broken
+val extractOrtAar by tasks.registering(Copy::class) {
+    val configuration = configurations.detachedConfiguration(dependencies.create("com.microsoft.onnxruntime:onnxruntime-android:1.18.0"))
+    val aarFile = configuration.resolve().first()
+    from(zipTree(aarFile))
+    into(layout.buildDirectory.dir("intermediates/ort-extracted"))
+}
+
 android {
     namespace = "com.example.beautyapp"
     compileSdk = 35
@@ -17,20 +25,20 @@ android {
         ndkVersion = "28.2.13676358"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
+        vectorDrawables { useSupportLibrary = true }
+        
         externalNativeBuild {
             cmake {
                 cppFlags("-std=c++17")
                 arguments("-DANDROID_STL=c++_shared")
-                // Provide hints for manually locating onnxruntime prefab if needed
+                // Use linker flags to ignore non-fatal property errors in older static libs (like OpenCV's ippicv on x86)
+                arguments("-DANDROID_CPP_FEATURES=rtti exceptions")
+                cppFlags("-Wno-unused-command-line-argument")
+                // Pass the extracted path to CMake
+                arguments("-DORT_PATH=${layout.buildDirectory.dir("intermediates/ort-extracted").get().asFile.absolutePath}")
             }
         }
-        ndk {
-            abiFilters.add("arm64-v8a")
-            abiFilters.add("armeabi-v7a")
-        }
+        // Removed mandatory abiFilters to support all platforms
     }
 
     splits {
@@ -46,34 +54,26 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-    buildFeatures {
-        compose = true
-        prefab = true // Crucial for Maven-based Native libs
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true; prefab = true }
+    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
         }
     }
+}
+
+tasks.withType<com.android.build.gradle.tasks.ExternalNativeBuildTask> {
+    dependsOn(extractOrtAar)
 }
 
 dependencies {
@@ -86,27 +86,14 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-extended")
-    
-    // OpenCV via Maven (AAR with Prefab support)
     implementation(libs.opencv)
-    
-    // AI Inference & Networking
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
     implementation("com.google.mlkit:face-detection:16.1.5")
-
-    // CameraX
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-
     testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

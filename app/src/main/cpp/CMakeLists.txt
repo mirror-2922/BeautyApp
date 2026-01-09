@@ -2,23 +2,35 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("beautyapp")
 
-set(OpenCV_DIR "E:/projects/AndroidStudioProjects/BeautyApp/opencv-sdk/OpenCV-android-sdk/sdk/native/jni")
-find_package(OpenCV REQUIRED)
+# OpenCV still uses official Prefab
+find_package(OpenCV REQUIRED CONFIG)
 
-# ORT remains implement in code but disabled in build due to link constraints
-# To enable ORT: 
-# 1. Download ORT Android AAR and extract libs/headers to cpp/libs
-# 2. Add find_library and target_link_libraries below
+# ONNX Runtime - Official Reference Mode (via Extracted AAR)
+# Headers: <aar>/headers
+# Libs: <aar>/jni/<abi>/libonnxruntime.so
+message(STATUS "Integrating ORT from path: ${ORT_PATH}")
 
+include_directories(SYSTEM ${ORT_PATH}/headers)
+
+add_library(ort_lib SHARED IMPORTED)
+set_target_properties(ort_lib PROPERTIES IMPORTED_LOCATION
+    ${ORT_PATH}/jni/${ANDROID_ABI}/libonnxruntime.so)
+
+# Modular JNI Bridges
 add_library(beautyapp SHARED 
     native-lib.cpp
+    jni/jni_image_utils.cpp
+    jni/jni_filters.cpp
+    jni/jni_ai.cpp
     filters/filters.cpp
     ai/ai.cpp
     ai/YoloDetector.cpp
-    # ai/OrtDetector.cpp
+    ai/OrtDetector.cpp
     utils/utils.cpp
 )
 
 target_link_libraries(beautyapp
-        ${OpenCV_LIBS}
+        OpenCV::opencv_java4
+        ort_lib
+        "-Wl,--no-fatal-warnings" # Ignore strict property errors in old libs
         log)
