@@ -5,32 +5,41 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import android.util.Size
 
 enum class AppMode {
-    Camera, // Filter Mode
-    AI      // YOLO Mode
+    Camera, AI
 }
 
 class BeautyViewModel : ViewModel() {
-    // Settings
+    // 基础设置
     var isDarkTheme by mutableStateOf(false)
     var useDynamicColor by mutableStateOf(true)
-    var resolution by mutableStateOf("1280x720")
-    var yoloConfidence by mutableStateOf(0.5f)
-    var yoloIoU by mutableStateOf(0.45f)
+    
+    // 分辨率设置
+    var cameraResolution by mutableStateOf("1280x720")
+    var backendResolutionScaling by mutableStateOf(false) // "保留前端分辨率" 开关
+    var targetBackendWidth by mutableStateOf(640)
+    
+    // 性能监控
+    var showDebugInfo by mutableStateOf(true)
+    var currentFps by mutableStateOf(0f)
+    var inferenceTime by mutableStateOf(0L)
+    var hardwareBackend by mutableStateOf("CPU")
+    var actualCameraSize by mutableStateOf("0x0")
+    var actualBackendSize by mutableStateOf("0x0")
 
-    // Camera Resolutions
-    val availableResolutions = listOf("640x480", "1280x720", "1920x1080")
-    var showResolutionDialog by mutableStateOf(false)
-
-    // State
+    // 状态
     var currentMode by mutableStateOf(AppMode.Camera)
     var selectedFilter by mutableStateOf("Normal")
     var showFilterDialog by mutableStateOf(false)
+    var showResolutionDialog by mutableStateOf(false)
     var lensFacing by mutableStateOf(androidx.camera.core.CameraSelector.LENS_FACING_BACK)
     var isLoading by mutableStateOf(false)
 
-    // YOLO Classes
+    // YOLO 配置
+    var yoloConfidence by mutableStateOf(0.5f)
+    var yoloIoU by mutableStateOf(0.45f)
     val allCOCOClasses = listOf(
         "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
         "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
@@ -42,31 +51,18 @@ class BeautyViewModel : ViewModel() {
         "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
         "hair drier", "toothbrush"
     )
-
-    // Performance & Debug
-    var showDebugInfo by mutableStateOf(true)
-    var currentFps by mutableStateOf(0f)
-    var inferenceTime by mutableStateOf(0L)
-    var hardwareBackend by mutableStateOf("CPU") // CPU, GPU (OpenCL), NPU (NNAPI)
-
-    // Current active classes for inference
     val selectedYoloClasses = mutableStateListOf<String>().apply { addAll(allCOCOClasses) }
 
-    fun toggleYoloClass(className: String) {
-        if (selectedYoloClasses.contains(className)) {
-            selectedYoloClasses.remove(className)
-        } else {
-            selectedYoloClasses.add(className)
-        }
-    }
-
-    // Filter Options
+    val availableResolutions = mutableStateListOf<String>()
     val filters = listOf("Normal", "Beauty", "Dehaze", "Underwater", "Stage")
 
-    fun toggleMode() {
-        currentMode = if (currentMode == AppMode.AI) AppMode.Camera else AppMode.AI
-        if (currentMode == AppMode.AI) {
-            selectedFilter = "Normal"
-        }
+    fun toggleYoloClass(className: String) {
+        if (selectedYoloClasses.contains(className)) selectedYoloClasses.remove(className)
+        else selectedYoloClasses.add(className)
+    }
+    
+    fun getCameraSize(): Size {
+        val parts = cameraResolution.split("x")
+        return Size(parts[0].toInt(), parts[1].toInt())
     }
 }

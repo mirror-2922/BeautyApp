@@ -1,9 +1,14 @@
 package com.example.beautyapp.ui
 
 import android.Manifest
+import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.ImageFormat
 import android.graphics.Matrix
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.util.Log
+import android.util.Size
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +44,7 @@ import com.example.beautyapp.viewmodel.BeautyViewModel
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
+import org.opencv.imgproc.Imgproc
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,31 +54,67 @@ import kotlinx.coroutines.withContext
 fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     val context = LocalContext.current
 
-    // Model Loading: YOLO12n
+    // 1. 动态探测设备支持的所有分辨率挡位
+    LaunchedEffect(viewModel.lensFacing) {
+        withContext(Dispatchers.IO) {
+            try {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val cameraIdList = cameraManager.cameraIdList
+                for (id in cameraIdList) {
+                    val characteristics = cameraManager.getCameraCharacteristics(id)
+                    val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                    
+                    val targetFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)
+                        CameraCharacteristics.LENS_FACING_BACK else CameraCharacteristics.LENS_FACING_FRONT
+                    
+                    if (facing == targetFacing) {
+                        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                        val sizes = map?.getOutputSizes(ImageFormat.YUV_420_888)
+                        if (sizes != null) {
+                            val sortedRes = sizes
+                                .filter { it.width >= 480 }
+                                .sortedByDescending { it.width * it.height }
+                                .map { "${it.width}x${it.height}" }
+                                .distinct()
+                            
+                            withContext(Dispatchers.Main) {
+                                viewModel.availableResolutions.clear()
+                                viewModel.availableResolutions.addAll(sortedRes)
+                                if (!sortedRes.contains(viewModel.cameraResolution) && sortedRes.isNotEmpty()) {
+                                    viewModel.cameraResolution = sortedRes[0]
+                                }
+                            }
+                        }
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // 2. 模型加载逻辑
     LaunchedEffect(Unit) {
         if (!viewModel.isLoading) {
             viewModel.isLoading = true
             withContext(Dispatchers.IO) {
                 var initSuccess = false
                 try {
-                    val modelName = "yolo12n.onnx"
+                    val modelName = "yolo12s.onnx"
                     val modelFile = File(context.filesDir, modelName)
-                    if (!modelFile.exists() || modelFile.length() < 1000000) {
+                    if (!modelFile.exists()) {
                         context.assets.open(modelName).use { input ->
-                            FileOutputStream(modelFile).use { output ->
-                                input.copyTo(output)
-                            }
+                            FileOutputStream(modelFile).use { output -> input.copyTo(output) }
                         }
                     }
                     initSuccess = NativeLib().initYolo(modelFile.absolutePath)
                 } catch (e: Exception) {
-                    Log.e("CameraScreen", "Model load error", e)
+                    e.printStackTrace()
                 }
                 withContext(Dispatchers.Main) {
                     viewModel.isLoading = false
-                    if (initSuccess) {
-                        Toast.makeText(context, "YOLO12n Ready", Toast.LENGTH_SHORT).show()
-                    }
+                    if (initSuccess) Toast.makeText(context, "AI Engine Initialized", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -93,15 +135,13 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("BeautyApp AI (YOLO12n)") },
+                title = { Text("BeautyApp Pro") },
                 actions = {
                     IconButton(onClick = {
                         viewModel.lensFacing = if (viewModel.lensFacing == CameraSelector.LENS_FACING_BACK)
-                            CameraSelector.LENS_FACING_FRONT
-                        else
-                            CameraSelector.LENS_FACING_BACK
+                            CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                     }) {
-                        Icon(Icons.Default.Refresh, "Switch Camera")
+                        Icon(Icons.Default.Refresh, "Switch")
                     }
                     IconButton(onClick = { navController.navigate("settings") }) {
                         Icon(Icons.Default.Settings, "Settings")
@@ -112,13 +152,13 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Face, "AI") },
-                    label = { Text("YOLO12n") },
+                    icon = { Icon(Icons.Default.Face, null) },
+                    label = { Text("AI Mode") },
                     selected = viewModel.currentMode == AppMode.AI,
                     onClick = { viewModel.currentMode = AppMode.AI }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Star, "Filter") },
+                    icon = { Icon(Icons.Default.Star, null) },
                     label = { Text("Camera") },
                     selected = viewModel.currentMode == AppMode.Camera,
                     onClick = { viewModel.currentMode = AppMode.Camera }
@@ -129,7 +169,7 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             if (viewModel.currentMode == AppMode.Camera) {
                 ExtendedFloatingActionButton(
                     onClick = { viewModel.showFilterDialog = true },
-                    icon = { Icon(Icons.Default.Star, "Filter") },
+                    icon = { Icon(Icons.Default.Star, null) },
                     text = { Text("Filters") }
                 )
             }
@@ -139,7 +179,6 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
             Box(Modifier.padding(padding).fillMaxSize()) {
                 CameraProcessor(viewModel)
                 
-                // Debug Overlay
                 if (viewModel.showDebugInfo) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.6f),
@@ -148,8 +187,9 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text("FPS: ${"%.1f".format(viewModel.currentFps)}", color = Color.Green, style = MaterialTheme.typography.labelLarge)
-                            Text("Latency: ${viewModel.inferenceTime}ms", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                            Text("Backend: ${viewModel.hardwareBackend}", color = Color.Cyan, style = MaterialTheme.typography.labelSmall)
+                            Text("Cap: ${viewModel.actualCameraSize}", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            Text("Proc: ${viewModel.actualBackendSize}", color = Color.Yellow, style = MaterialTheme.typography.labelSmall)
+                            Text("Latency: ${viewModel.inferenceTime}ms", color = Color.White, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -159,10 +199,6 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                         CircularProgressIndicator()
                     }
                 }
-            }
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Camera Permission Required")
             }
         }
     }
@@ -175,14 +211,14 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                 Column {
                     viewModel.filters.forEach { filter ->
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().clickable {
                                 viewModel.selectedFilter = filter
                                 viewModel.showFilterDialog = false
-                            }.padding(12.dp)
+                            }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(selected = (filter == viewModel.selectedFilter), onClick = null)
-                            Text(text = filter, modifier = Modifier.padding(start = 8.dp))
+                            Text(filter, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
                 }
@@ -202,12 +238,12 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
     var bitmapState by remember { mutableStateOf<Bitmap?>(null) }
     var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
-    // Persistent reusable objects
     val rgbaMat = remember { Mat() }
     val rotatedMat = remember { Mat() }
+    val processedMat = remember { Mat() }
     var outputBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    DisposableEffect(lifecycleOwner, viewModel.lensFacing) {
+    DisposableEffect(lifecycleOwner, viewModel.lensFacing, viewModel.cameraResolution) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener = Runnable {
             val cameraProvider = cameraProviderFuture.get()
@@ -218,25 +254,23 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
             cameraProvider.unbindAll()
 
             val imageAnalysis = ImageAnalysis.Builder()
+                .setTargetResolution(viewModel.getCameraSize())
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
 
             imageAnalysis.setAnalyzer(executor) { imageProxy ->
                 try {
                     val startTime = System.currentTimeMillis()
-                    val w = imageProxy.width
-                    val h = imageProxy.height
+                    viewModel.actualCameraSize = "${imageProxy.width}x${imageProxy.height}"
                     
-                    // 1. YUV to Mat
                     nativeLib.yuvToRgba(
                         imageProxy.planes[0].buffer, imageProxy.planes[0].rowStride,
                         imageProxy.planes[1].buffer, imageProxy.planes[1].rowStride,
                         imageProxy.planes[2].buffer, imageProxy.planes[2].rowStride,
                         imageProxy.planes[1].pixelStride,
-                        w, h, rgbaMat.nativeObjAddr
+                        imageProxy.width, imageProxy.height, rgbaMat.nativeObjAddr
                     )
 
-                    // 2. Efficient Rotation in OpenCV
                     val rotation = imageProxy.imageInfo.rotationDegrees
                     when (rotation) {
                         90 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_CLOCKWISE)
@@ -244,51 +278,45 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
                         270 -> Core.rotate(rgbaMat, rotatedMat, Core.ROTATE_90_COUNTERCLOCKWISE)
                         else -> rgbaMat.copyTo(rotatedMat)
                     }
-                    
-                    if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) {
-                        Core.flip(rotatedMat, rotatedMat, 1)
-                    }
+                    if (viewModel.lensFacing == CameraSelector.LENS_FACING_FRONT) Core.flip(rotatedMat, rotatedMat, 1)
 
-                    // 3. Process
+                    if (viewModel.backendResolutionScaling) {
+                        val scale = viewModel.targetBackendWidth.toFloat() / rotatedMat.cols()
+                        val targetHeight = (rotatedMat.rows() * scale).toInt()
+                        Imgproc.resize(rotatedMat, processedMat, org.opencv.core.Size(viewModel.targetBackendWidth.toDouble(), targetHeight.toDouble()))
+                    } else {
+                        rotatedMat.copyTo(processedMat)
+                    }
+                    
+                    viewModel.actualBackendSize = "${processedMat.cols()}x${processedMat.height()}"
+
                     if (viewModel.currentMode == AppMode.AI) {
-                        val activeIds = viewModel.selectedYoloClasses.map { 
-                            viewModel.allCOCOClasses.indexOf(it) 
-                        }.filter { it >= 0 }.toIntArray()
-                        
-                        nativeLib.yoloInference(rotatedMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
+                        val activeIds = viewModel.selectedYoloClasses.map { viewModel.allCOCOClasses.indexOf(it) }.filter { it >= 0 }.toIntArray()
+                        nativeLib.yoloInference(processedMat.nativeObjAddr, viewModel.yoloConfidence, viewModel.yoloIoU, activeIds)
                     } else if (viewModel.selectedFilter != "Normal") {
                         when (viewModel.selectedFilter) {
-                            "Beauty" -> nativeLib.applyBeautyFilter(rotatedMat.nativeObjAddr)
-                            "Dehaze" -> nativeLib.applyDehaze(rotatedMat.nativeObjAddr)
-                            "Underwater" -> nativeLib.applyUnderwater(rotatedMat.nativeObjAddr)
-                            "Stage" -> nativeLib.applyStage(rotatedMat.nativeObjAddr)
+                            "Beauty" -> nativeLib.applyBeautyFilter(processedMat.nativeObjAddr)
+                            "Dehaze" -> nativeLib.applyDehaze(processedMat.nativeObjAddr)
+                            "Underwater" -> nativeLib.applyUnderwater(processedMat.nativeObjAddr)
+                            "Stage" -> nativeLib.applyStage(processedMat.nativeObjAddr)
                         }
                     }
 
-                    // 4. Update Reusable Bitmap
-                    if (outputBitmap == null || outputBitmap!!.width != rotatedMat.cols() || outputBitmap!!.height != rotatedMat.rows()) {
-                        outputBitmap = Bitmap.createBitmap(rotatedMat.cols(), rotatedMat.rows(), Bitmap.Config.ARGB_8888)
+                    if (outputBitmap == null || outputBitmap!!.width != processedMat.cols() || outputBitmap!!.height != processedMat.rows()) {
+                        outputBitmap = Bitmap.createBitmap(processedMat.cols(), processedMat.rows(), Bitmap.Config.ARGB_8888)
                     }
-                    Utils.matToBitmap(rotatedMat, outputBitmap)
+                    Utils.matToBitmap(processedMat, outputBitmap)
                     
-                    // 5. FPS & Stats
                     val endTime = System.currentTimeMillis()
                     val duration = endTime - lastFrameTime
                     lastFrameTime = endTime
-                    
                     viewModel.inferenceTime = endTime - startTime
-                    if (duration > 0) {
-                        viewModel.currentFps = 0.9f * viewModel.currentFps + 0.1f * (1000f / duration)
-                    }
+                    if (duration > 0) viewModel.currentFps = 0.9f * viewModel.currentFps + 0.1f * (1000f / duration)
 
-                    // Trigger UI update with the same bitmap reference (Compose will detect the change)
-                    // Note: In Compose, assigning the same object doesn't always trigger recomposition unless the state value is different.
-                    // We use a dummy toggle or a wrapper to ensure update.
-                    bitmapState = null // Force refresh
+                    bitmapState = null
                     bitmapState = outputBitmap
-
                 } catch (e: Exception) {
-                    Log.e("CameraProcessor", "Processing error", e)
+                    e.printStackTrace()
                 } finally {
                     imageProxy.close()
                 }
@@ -301,10 +329,7 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
             }
         }
         cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))
-
-        onDispose {
-            cameraProviderFuture.get().unbindAll()
-        }
+        onDispose { cameraProviderFuture.get().unbindAll() }
     }
 
     DisposableEffect(Unit) {
@@ -312,6 +337,7 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
             executor.shutdown()
             rgbaMat.release()
             rotatedMat.release()
+            processedMat.release()
         }
     }
 
@@ -320,11 +346,9 @@ fun CameraProcessor(viewModel: BeautyViewModel) {
             bitmap = bitmapState!!.asImageBitmap(),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+            contentScale = ContentScale.Fit
         )
     } else {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
 }

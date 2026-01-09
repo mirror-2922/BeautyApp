@@ -2,6 +2,8 @@ package com.example.beautyapp.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
@@ -17,6 +19,8 @@ import com.example.beautyapp.viewmodel.BeautyViewModel
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
+    val scrollState = rememberScrollState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -32,22 +36,17 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
         Column(
             modifier = Modifier
                 .padding(padding)
-                .padding(16.dp)
                 .fillMaxSize()
+                .verticalScroll(scrollState) // 增加垂直滚动
+                .padding(16.dp)
         ) {
             // Appearance Section
             Text("Appearance", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("Dark Theme", modifier = Modifier.weight(1f))
                 Switch(checked = viewModel.isDarkTheme, onCheckedChange = { viewModel.isDarkTheme = it })
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Text("Dynamic Color (Monet)", modifier = Modifier.weight(1f))
                 Switch(checked = viewModel.useDynamicColor, onCheckedChange = { viewModel.useDynamicColor = it })
             }
@@ -55,41 +54,62 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
             Divider(modifier = Modifier.padding(vertical = 16.dp))
 
             // AI Settings Section
-            Text("AI Features", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text("AI Inference", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
             
-            // Navigate to YOLO Object List
             ListItem(
-                headlineContent = { Text("Detection Objects") },
+                headlineContent = { Text("Detection Classes") },
                 supportingContent = { Text("${viewModel.selectedYoloClasses.size} objects active") },
                 trailingContent = { Icon(Icons.Default.ChevronRight, null) },
                 modifier = Modifier.clickable { navController.navigate("yolo_objects") }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("YOLO v11 Sensitivity", style = MaterialTheme.typography.bodyMedium)
+            Text("Sensitivity Control", style = MaterialTheme.typography.bodyMedium)
             Text("Confidence: ${(viewModel.yoloConfidence * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
-            Slider(
-                value = viewModel.yoloConfidence,
-                onValueChange = { viewModel.yoloConfidence = it },
-                valueRange = 0f..1f
-            )
-            
+            Slider(value = viewModel.yoloConfidence, onValueChange = { viewModel.yoloConfidence = it })
             Text("IoU: ${(viewModel.yoloIoU * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
-            Slider(
-                value = viewModel.yoloIoU,
-                onValueChange = { viewModel.yoloIoU = it },
-                valueRange = 0f..1f
+            Slider(value = viewModel.yoloIoU, onValueChange = { viewModel.yoloIoU = it })
+
+            Divider(modifier = Modifier.padding(vertical = 16.dp))
+
+            // Camera & Backend Section
+            Text("Processing & Backend", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            
+            ListItem(
+                headlineContent = { Text("Capture Resolution") },
+                supportingContent = { Text("Selected: ${viewModel.cameraResolution} (Actual: ${viewModel.actualCameraSize})") },
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                modifier = Modifier.clickable { viewModel.showResolutionDialog = true }
             )
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Independent Inference Resolution", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Decouple preview and processing resolution to boost performance while maintaining high-quality preview.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = viewModel.backendResolutionScaling, onCheckedChange = { viewModel.backendResolutionScaling = it })
+            }
+
+            if (viewModel.backendResolutionScaling) {
+                Text("Target Processing Width: ${viewModel.targetBackendWidth}px", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = viewModel.targetBackendWidth.toFloat(),
+                    onValueChange = { viewModel.targetBackendWidth = it.toInt() },
+                    valueRange = 320f..1280f,
+                    steps = 3
+                )
+            }
 
             Divider(modifier = Modifier.padding(vertical = 16.dp))
 
             // Debug & Performance Section
-            Text("Debug & Performance", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            ) {
-                Text("Show Debug Info (FPS/Latency)", modifier = Modifier.weight(1f))
+            Text("Performance", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text("Overlay Performance Metrics", modifier = Modifier.weight(1f))
                 Switch(checked = viewModel.showDebugInfo, onCheckedChange = { viewModel.showDebugInfo = it })
             }
 
@@ -109,45 +129,26 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                 }
             }
 
-            Divider(modifier = Modifier.padding(vertical = 16.dp))
-
-            // Camera Section
-            Text("Camera", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            ListItem(
-                headlineContent = { Text("Resolution") },
-                supportingContent = { Text(viewModel.resolution) },
-                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
-                modifier = Modifier.clickable { viewModel.showResolutionDialog = true }
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-            
-            Text(
-                "BeautyApp v1.0 (YOLO Embedded)",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Text("BeautyApp v1.1 | YOLO12n", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall)
         }
     }
 
     if (viewModel.showResolutionDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.showResolutionDialog = false },
-            title = { Text("Select Resolution") },
+            title = { Text("Select Capture Resolution") },
             text = {
                 Column {
                     viewModel.availableResolutions.forEach { res ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.resolution = res
-                                    viewModel.showResolutionDialog = false
-                                }
-                                .padding(12.dp)
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                viewModel.cameraResolution = res
+                                viewModel.showResolutionDialog = false
+                            }.padding(12.dp)
                         ) {
-                            RadioButton(selected = (res == viewModel.resolution), onClick = null)
+                            RadioButton(selected = (res == viewModel.cameraResolution), onClick = null)
                             Text(res, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
