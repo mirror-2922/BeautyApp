@@ -27,6 +27,7 @@ import com.mirror2922.ecvl.NativeLib
 import com.mirror2922.ecvl.ui.camera.CameraOverlay
 import com.mirror2922.ecvl.ui.camera.CameraView
 import com.mirror2922.ecvl.ui.components.AppHud
+import com.mirror2922.ecvl.ui.components.FilterPanel
 import com.mirror2922.ecvl.viewmodel.AppMode
 import com.mirror2922.ecvl.viewmodel.BeautyViewModel
 import kotlinx.coroutines.Dispatchers
@@ -104,7 +105,10 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     icon = { Icon(Icons.Default.PrecisionManufacturing, null) },
                     label = { Text("YOLO") },
                     selected = viewModel.currentMode == AppMode.AI,
-                    onClick = { viewModel.currentMode = AppMode.AI }
+                    onClick = { 
+                        viewModel.currentMode = AppMode.AI
+                        viewModel.showFilterPanel = false
+                    }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Camera, null) },
@@ -116,7 +120,10 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                     icon = { Icon(Icons.Default.Face, null) },
                     label = { Text("Face") },
                     selected = viewModel.currentMode == AppMode.FACE,
-                    onClick = { viewModel.currentMode = AppMode.FACE }
+                    onClick = { 
+                        viewModel.currentMode = AppMode.FACE 
+                        viewModel.showFilterPanel = false
+                    }
                 )
             }
         }
@@ -126,6 +133,33 @@ fun CameraScreen(navController: NavController, viewModel: BeautyViewModel) {
                 CameraView(viewModel)
                 CameraOverlay(viewModel, containerSize)
                 AppHud(viewModel, Modifier.align(Alignment.TopStart))
+                
+                // --- Larger Effect Button (FAB) ---
+                if (viewModel.currentMode == AppMode.Camera) {
+                    FloatingActionButton(
+                        onClick = { viewModel.showFilterPanel = !viewModel.showFilterPanel },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(24.dp),
+                        containerColor = if (viewModel.showFilterPanel) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Icon(
+                            imageVector = if (viewModel.showFilterPanel) Icons.Default.Close else Icons.Default.AutoFixHigh,
+                            contentDescription = "Effects",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+
+                // Filter Selection Panel
+                FilterPanel(
+                    viewModel = viewModel,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+
                 if (viewModel.isLoading) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
