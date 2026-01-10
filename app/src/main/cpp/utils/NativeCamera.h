@@ -10,6 +10,7 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include <atomic>
 
 class NativeCamera {
 public:
@@ -25,8 +26,8 @@ private:
     
     ANativeWindow* viewfinderWindow = nullptr;
     ANativeWindow* mlKitWindow = nullptr;
-    AImageReader* viewfinderReader = nullptr; // High-res for Filter & Preview
-    AImageReader* aiReader = nullptr;         // 640x640 for AI
+    AImageReader* viewfinderReader = nullptr;
+    AImageReader* aiReader = nullptr;
 
     ACaptureRequest* captureRequest = nullptr;
     ACameraCaptureSession* captureSession = nullptr;
@@ -40,6 +41,13 @@ private:
     ACaptureSessionOutput* sessionOutputMlKit = nullptr;
     ACaptureSessionOutput* sessionOutputAi = nullptr;
 
+    // Callbacks
+    static void onDeviceDisconnected(void* context, ACameraDevice* device);
+    static void onDeviceError(void* context, ACameraDevice* device, int error);
+    static void onSessionClosed(void* context, ACameraCaptureSession* session);
+    static void onSessionReady(void* context, ACameraCaptureSession* session);
+    static void onSessionActive(void* context, ACameraCaptureSession* session);
+    
     static void onViewfinderImage(void* context, AImageReader* reader);
     static void onAiImage(void* context, AImageReader* reader);
     
@@ -53,6 +61,9 @@ private:
     int currentHeight = 0;
     int sensorOrientation = 0;
     int lensFacing = 0;
+
+    std::mutex windowMutex;
+    std::atomic<bool> cameraActive{false};
 
     // Perf metrics
     std::chrono::steady_clock::time_point lastFrameTime;

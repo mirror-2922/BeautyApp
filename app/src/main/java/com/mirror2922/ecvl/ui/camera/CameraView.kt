@@ -31,7 +31,6 @@ fun CameraView(viewModel: BeautyViewModel) {
     val nativeLib = remember { NativeLib() }
     var viewfinderSurface by remember { mutableStateOf<Surface?>(null) }
     
-    // 1. Setup ML Kit & ImageReader for Kotlin-side Face Detection
     val faceDetector = remember {
         val options = FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
@@ -42,14 +41,11 @@ fun CameraView(viewModel: BeautyViewModel) {
     val mlKitReader = remember {
         ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
     }
-    
-    val mlKitExecutor = remember { Executors.newSingleThreadExecutor() }
 
-    // 2. Performance & Detection Polling
+    // 1. Data Polling
     LaunchedEffect(Unit) {
         while (isActive) {
             try {
-                // Fetch Performance Metrics from NDK
                 val perf = nativeLib.getPerfMetricsBinary()
                 if (perf.size >= 4) {
                     viewModel.currentFps = perf[0]
@@ -58,10 +54,8 @@ fun CameraView(viewModel: BeautyViewModel) {
                     viewModel.actualBackendSize = if (viewModel.currentMode == AppMode.AI) "640x640" else viewModel.actualCameraSize
                 }
                 
-                // 2. Fetch Hardware Usage
                 viewModel.cpuUsage = HardwareMonitor.getCpuUsage()
                 
-                // Hardware usage estimation based on frame budget (33ms for 30fps)
                 if (viewModel.currentMode == AppMode.AI) {
                     val loadFactor = (viewModel.inferenceTime.toFloat() / 33f).coerceIn(0.05f, 1.0f)
                     when {
@@ -78,13 +72,7 @@ fun CameraView(viewModel: BeautyViewModel) {
                             viewModel.npuUsage = 0.01f
                         }
                     }
-                } else {
-                    viewModel.gpuUsage = 0.05f
-                    viewModel.npuUsage = 0.01f
-                }
-                
-                // Fetch AI Detections from NDK (YOLO)
-                if (viewModel.currentMode == AppMode.AI) {
+
                     val data = nativeLib.getNativeDetectionsBinary()
                     if (data.isNotEmpty()) {
                         val objCount = data[0].toInt()
@@ -105,9 +93,9 @@ fun CameraView(viewModel: BeautyViewModel) {
                         }
                         viewModel.detections.clear()
                         viewModel.detections.addAll(detections)
-                    } else {
-                        viewModel.detections.clear()
                     }
+                } else if (viewModel.currentMode == AppMode.Camera) {
+                    viewModel.detections.clear()
                 }
             } catch (e: Exception) {
                 Log.e("CameraView", "Polling error", e)
@@ -116,10 +104,10 @@ fun CameraView(viewModel: BeautyViewModel) {
         }
     }
 
-    // 3. Handle ML Kit Image Stream
+    // 2. ML Kit Listener
     DisposableEffect(mlKitReader) {
         val listener = ImageReader.OnImageAvailableListener { reader ->
-            val image = reader.acquireLatestImage() ?: return@OnImageAvailableListener
+            val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return@OnImageAvailableListener
             if (viewModel.currentMode == AppMode.FACE) {
                 val inputImage = InputImage.fromMediaImage(image, 0)
                 faceDetector.process(inputImage)
@@ -144,48 +132,51 @@ fun CameraView(viewModel: BeautyViewModel) {
             image.close()
         }
         mlKitReader.setOnImageAvailableListener(listener, Handler(android.os.Looper.getMainLooper()))
-        onDispose { /* mlKitReader.close() handled in separate remember block if needed, but here we just stop listener */ }
+        onDispose { 
+            mlKitReader.setOnImageAvailableListener(null, null)
+        }
     }
 
-    // 4. Lifecycle & NDK Camera Control
+    // 3. Camera Lifecycle
     DisposableEffect(viewModel.lensFacing, viewModel.cameraResolution, viewfinderSurface) {
         val vs = viewfinderSurface
+        var cameraStarted = false
         if (vs != null) {
             val resParts = viewModel.cameraResolution.split("x")
-            val facing = if (viewModel.lensFacing == 1) 1 else 0 // ACAMERA_LENS_FACING_BACK is 1
-            nativeLib.startNativeCamera(facing, resParts[0].toInt(), resParts[1].toInt(), vs, mlKitReader.surface)
+            val facing = if (viewModel.lensFacing == 1) 1 else 0
+            cameraStarted = nativeLib.startNativeCamera(facing, resParts[0].toInt(), resParts[1].toInt(), vs, mlKitReader.surface)
             
-            // Sync initial state
             nativeLib.updateNativeConfig(
                 if (viewModel.currentMode == AppMode.AI) 1 else if (viewModel.currentMode == AppMode.FACE) 2 else 0,
                 viewModel.selectedFilter
             )
         }
+        
         onDispose {
-            nativeLib.stopNativeCamera()
+            if (cameraStarted) {
+                nativeLib.stopNativeCamera()
+            }
         }
     }
 
-    // 5. Dynamic Mode/Filter Sync
+    // 4. Config Sync
     LaunchedEffect(viewModel.currentMode, viewModel.selectedFilter) {
         nativeLib.updateNativeConfig(
             if (viewModel.currentMode == AppMode.AI) 1 else if (viewModel.currentMode == AppMode.FACE) 2 else 0,
             viewModel.selectedFilter
         )
-        // Clear detections when switching away from AI/Face
-        if (viewModel.currentMode == AppMode.Camera) {
-            viewModel.detections.clear()
-        }
     }
 
-    // 6. Native Viewfinder
     AndroidView(
         factory = { ctx ->
             SurfaceView(ctx).apply {
                 holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(h: SurfaceHolder) { viewfinderSurface = h.surface }
                     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, h1: Int) { viewfinderSurface = h.surface }
-                    override fun surfaceDestroyed(h: SurfaceHolder) { viewfinderSurface = null }
+                    override fun surfaceDestroyed(h: SurfaceHolder) { 
+                        viewfinderSurface = null 
+                        nativeLib.stopNativeCamera() // Fail-safe stop
+                    }
                 })
             }
         },

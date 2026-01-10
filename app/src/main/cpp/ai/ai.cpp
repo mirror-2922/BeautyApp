@@ -77,6 +77,10 @@ vector<YoloResult> runYoloInference(long matAddr, float confThreshold, float iou
 void updateDetectionsBinary(const vector<YoloResult>& results) {
     lock_guard<mutex> lock(resultMutex);
     binaryResults.clear();
+    if (results.empty()) {
+        binaryResults.push_back(0.0f);
+        return;
+    }
     binaryResults.push_back((float)results.size());
     for (const auto& res : results) {
         // 我们假设这里已经归一化了，或者由 NativeCamera 完成
