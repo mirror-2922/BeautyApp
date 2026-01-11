@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui
+package com.mirror2922.ecvl.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -72,6 +72,13 @@ fun SettingsScreen(navController: NavController, viewModel: BeautyViewModel) {
                 subtitle = "Current: ${viewModel.availableModels.find { it.id == viewModel.currentModelId }?.name ?: "None"}",
                 icon = Icons.Default.ChevronRight,
                 onClick = { navController.navigate("model_management") }
+            )
+
+            SettingItem(
+                title = "Object Detection Classes",
+                subtitle = "Select classes to detect (YOLO)",
+                icon = Icons.Default.ChevronRight,
+                onClick = { navController.navigate("yolo_objects") }
             )
 
             SettingSwitch("Independent Inference Resolution", viewModel.backendResolutionScaling) { 

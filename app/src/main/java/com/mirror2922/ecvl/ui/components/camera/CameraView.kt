@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui.camera
+package com.mirror2922.ecvl.ui.components.camera
 
 import android.graphics.Bitmap
 import android.util.Size

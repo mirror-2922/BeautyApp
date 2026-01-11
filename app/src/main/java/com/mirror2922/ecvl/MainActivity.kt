@@ -19,10 +19,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.mirror2922.ecvl.ui.CameraScreen
-import com.mirror2922.ecvl.ui.SettingsScreen
-import com.mirror2922.ecvl.ui.YoloObjectListScreen
-import com.mirror2922.ecvl.ui.ModelManagementScreen
+import com.mirror2922.ecvl.ui.screens.MainScreen
+import com.mirror2922.ecvl.ui.screens.settings.SettingsScreen
+import com.mirror2922.ecvl.ui.screens.ai.YoloObjectListScreen
+import com.mirror2922.ecvl.ui.screens.settings.ModelManagementScreen
 import com.mirror2922.ecvl.viewmodel.BeautyViewModel
 import org.opencv.android.OpenCVLoader
 
@@ -56,7 +56,7 @@ fun AppNavigation(viewModel: BeautyViewModel) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "camera") {
         composable("camera") {
-            CameraScreen(navController, viewModel)
+            MainScreen(navController, viewModel)
         }
         composable("settings") {
             SettingsScreen(navController, viewModel)

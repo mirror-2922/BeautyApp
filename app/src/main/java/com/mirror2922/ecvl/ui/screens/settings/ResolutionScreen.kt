@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui
+package com.mirror2922.ecvl.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*

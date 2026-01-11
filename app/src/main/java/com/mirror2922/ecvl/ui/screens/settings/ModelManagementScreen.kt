@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui
+package com.mirror2922.ecvl.ui.screens.settings
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable

@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui
+package com.mirror2922.ecvl.ui.screens.ai
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn

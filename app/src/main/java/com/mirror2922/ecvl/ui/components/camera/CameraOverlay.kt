@@ -1,4 +1,4 @@
-package com.mirror2922.ecvl.ui.camera
+package com.mirror2922.ecvl.ui.components.camera
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
