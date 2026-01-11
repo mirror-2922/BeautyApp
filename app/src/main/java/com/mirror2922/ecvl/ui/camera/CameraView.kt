@@ -172,6 +172,12 @@ fun CameraView(viewModel: BeautyViewModel) {
                                 "Dehaze" -> nativeLib.applyDehaze(previewMat.nativeObjAddr)
                                 "Underwater" -> nativeLib.applyUnderwater(previewMat.nativeObjAddr)
                                 "Stage" -> nativeLib.applyStage(previewMat.nativeObjAddr)
+                                "Gray" -> nativeLib.applyGray(previewMat.nativeObjAddr)
+                                "HistEq" -> nativeLib.applyHistEq(previewMat.nativeObjAddr)
+                                "Binary" -> nativeLib.applyBinary(previewMat.nativeObjAddr)
+                                "MorphOpen" -> nativeLib.applyMorphOpen(previewMat.nativeObjAddr)
+                                "MorphClose" -> nativeLib.applyMorphClose(previewMat.nativeObjAddr)
+                                "Blur" -> nativeLib.applyBlur(previewMat.nativeObjAddr)
                             }
                         }
                         viewModel.actualBackendSize = viewModel.actualCameraSize

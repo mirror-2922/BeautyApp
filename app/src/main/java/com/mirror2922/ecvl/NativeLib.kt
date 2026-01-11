@@ -12,11 +12,11 @@ class NativeLib {
     external fun applyStage(matAddr: Long)
 
     // Legacy/Utils
-    external fun convertToGray(matAddr: Long)
-    external fun histogramEqualization(matAddr: Long)
-    external fun binarize(matAddr: Long)
-    external fun morphOpen(matAddr: Long)
-    external fun morphClose(matAddr: Long)
+    external fun applyGray(matAddr: Long)
+    external fun applyHistEq(matAddr: Long)
+    external fun applyBinary(matAddr: Long)
+    external fun applyMorphOpen(matAddr: Long)
+    external fun applyMorphClose(matAddr: Long)
     external fun applyBlur(matAddr: Long)
     external fun recognizeColorBlock(matAddr: Long): String
     

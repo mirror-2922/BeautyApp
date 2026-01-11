@@ -1,6 +1,7 @@
 package com.mirror2922.ecvl.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,29 +26,36 @@ fun FilterPanel(viewModel: BeautyViewModel, modifier: Modifier = Modifier) {
         modifier = modifier
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
             shape = MaterialTheme.shapes.extraLarge,
-            tonalElevation = 3.dp,
+            tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(16.dp)
         ) {
             Column(
-                modifier = Modifier.padding(vertical = 16.dp)
+                modifier = Modifier.padding(top = 16.dp, bottom = 24.dp)
             ) {
+                // Drag Handle Indicator (Visual only)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 12.dp)
+                        .width(32.dp)
+                        .height(4.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), MaterialTheme.shapes.extraSmall)
+                )
+
                 Text(
-                    "Video Effects",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(start = 20.dp, bottom = 16.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    "Apply Filter",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 
-                // Alignment: contentPadding starts at 20.dp to match Title
-                // clipToPadding is true by default, causing the items to clip AT the 20.dp mark
                 LazyRow(
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     items(viewModel.filters) { filter ->
@@ -75,6 +83,12 @@ private fun FilterItem(
         "Dehaze" -> Icons.Default.CloudQueue
         "Underwater" -> Icons.Default.Waves
         "Stage" -> Icons.Default.TheaterComedy
+        "Gray" -> Icons.Default.Gradient
+        "HistEq" -> Icons.Default.Contrast
+        "Binary" -> Icons.Default.FilterHdr
+        "MorphOpen" -> Icons.Default.OpenInFull
+        "MorphClose" -> Icons.Default.CloseFullscreen
+        "Blur" -> Icons.Default.BlurOn
         else -> Icons.Default.AutoFixNormal
     }
 
