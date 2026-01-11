@@ -140,8 +140,11 @@ fun CameraView(viewModel: BeautyViewModel) {
                             val boxArr = obj.getJSONArray("box")
                             results.add(YoloResultData(obj.getString("label"), obj.getDouble("conf").toFloat(), listOf(boxArr.getInt(0), boxArr.getInt(1), boxArr.getInt(2), boxArr.getInt(3))))
                         }
-                        viewModel.detectedYoloObjects.clear()
-                        viewModel.detectedYoloObjects.addAll(results)
+                        
+                        ContextCompat.getMainExecutor(context).execute {
+                            viewModel.detectedYoloObjects.clear()
+                            viewModel.detectedYoloObjects.addAll(results)
+                        }
                     } else if (viewModel.currentMode == AppMode.FACE) {
                         // ML Kit coordinates are relative to the input image (unrotated)
                         // But we tell ML Kit the rotation, so it returns coordinates corrected for that rotation.
@@ -212,6 +215,14 @@ fun CameraView(viewModel: BeautyViewModel) {
     DisposableEffect(Unit) {
         onDispose {
             executor.shutdown()
+            try {
+                if (!executor.awaitTermination(800, TimeUnit.MILLISECONDS)) {
+                    executor.shutdownNow()
+                }
+            } catch (e: InterruptedException) {
+                executor.shutdownNow()
+            }
+            
             rgbaMat.release()
             captureMat.release()
             previewMat.release()
