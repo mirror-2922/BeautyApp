@@ -18,9 +18,9 @@ add_library(beautyapp SHARED
     jni/jni_filters.cpp
     jni/jni_ai.cpp
     filters/filters.cpp
-    ai/ai.cpp
-    ai/YoloDetector.cpp
-    ai/OrtDetector.cpp
+    ai/AIController.cpp
+    ai/engine/DNNEngine.cpp
+    ai/engine/OrtEngine.cpp
     utils/utils.cpp
 )
 

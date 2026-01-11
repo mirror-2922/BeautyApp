@@ -9,4 +9,5 @@ struct YoloResult {
     int y;
     int width;
     int height;
+    int classId;
 };
