@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 import com.mirror2922.ecvl.ui.components.AppHud
-import com.mirror2922.ecvl.ui.components.camera.CameraView
+import com.mirror2922.ecvl.ui.components.camera.MlKitCameraView
 import com.mirror2922.ecvl.viewmodel.AppMode
 import com.mirror2922.ecvl.viewmodel.BeautyViewModel
 
@@ -27,7 +27,7 @@ fun FaceCameraScreen(viewModel: BeautyViewModel) {
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(modifier = Modifier.fillMaxSize().onGloballyPositioned { containerSize = it.size }) {
-        CameraView(viewModel)
+        MlKitCameraView(viewModel)
         FaceOverlay(viewModel, containerSize)
         AppHud(viewModel, Modifier.align(Alignment.TopStart))
     }

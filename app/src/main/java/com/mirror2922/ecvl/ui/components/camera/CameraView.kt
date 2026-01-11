@@ -44,13 +44,6 @@ fun CameraView(viewModel: BeautyViewModel) {
     val nativeLib = remember { NativeLib() }
     val executor = remember { Executors.newSingleThreadExecutor() }
     
-    val faceDetector = remember {
-        val options = FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-            .build()
-        FaceDetection.getClient(options)
-    }
-
     var bitmapState by remember { mutableStateOf<Bitmap?>(null) }
     var lastFrameTime by remember { mutableStateOf(System.currentTimeMillis()) }
     val rgbaMat = remember { Mat() }
@@ -145,29 +138,6 @@ fun CameraView(viewModel: BeautyViewModel) {
                             viewModel.detectedYoloObjects.clear()
                             viewModel.detectedYoloObjects.addAll(results)
                         }
-                    } else if (viewModel.currentMode == AppMode.FACE) {
-                        // ML Kit coordinates are relative to the input image (unrotated)
-                        // But we tell ML Kit the rotation, so it returns coordinates corrected for that rotation.
-                        // We store the coordinate space ML Kit is operating in.
-                        val isRotated = rotation == 90 || rotation == 270
-                        val detectorW = if (isRotated) imageProxy.height else imageProxy.width
-                        val detectorH = if (isRotated) imageProxy.width else imageProxy.height
-                        viewModel.actualBackendSize = "${detectorW}x${detectorH}"
-
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
-                            val latch = CountDownLatch(1)
-                            faceDetector.process(inputImage)
-                                .addOnSuccessListener { faces ->
-                                    viewModel.detectedFaces.clear()
-                                    faces.forEach { viewModel.detectedFaces.add(FaceResult(it.boundingBox, it.trackingId)) }
-                                }
-                                .addOnCompleteListener { latch.countDown() }
-                            
-                            // Prevent SIGSEGV by waiting for detector to finish before closing imageProxy
-                            latch.await(500, TimeUnit.MILLISECONDS)
-                        }
                     } else {
                         if (viewModel.selectedFilter != "Normal") {
                             when (viewModel.selectedFilter) {
@@ -227,7 +197,6 @@ fun CameraView(viewModel: BeautyViewModel) {
             captureMat.release()
             previewMat.release()
             aiMat.release()
-            faceDetector.close()
         }
     }
 
